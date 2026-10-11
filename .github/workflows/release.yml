@@ -125,3 +125,27 @@ jobs:
             --title "Portalkeeper $TAG" \
             --generate-notes \
             --verify-tag
+
+      # Tells the realm's portal about the release, so open launchers update within about a minute
+      # instead of waiting for the portal's hourly look at GitHub. Needs the PORTAL_RELEASE_SECRET
+      # secret (the portal's LAUNCHER_RELEASE_SECRET). A failure here never fails the release.
+      - name: Announce the release to the portal
+        continue-on-error: true
+        env:
+          PORTAL_RELEASE_SECRET: ${{ secrets.PORTAL_RELEASE_SECRET }}
+          PORTAL_VERSION_URL: ${{ vars.PORTAL_VERSION_URL || 'https://wow.vaultrona.com/api/launcher/version.php' }}
+        run: |
+          if [ -z "$PORTAL_RELEASE_SECRET" ]; then
+            echo "PORTAL_RELEASE_SECRET isn't set. The portal finds the release by itself."
+            exit 0
+          fi
+
+          BODY=$(printf '{"tag":"%s","time":%s}' "$GITHUB_REF_NAME" "$(date +%s)")
+          SIGNATURE=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$PORTAL_RELEASE_SECRET" | awk '{print $NF}')
+
+          curl --fail-with-body --silent --show-error --max-time 30 --retry 3 --retry-all-errors \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Signature: sha256=$SIGNATURE" \
+            --data-binary "$BODY" \
+            "$PORTAL_VERSION_URL"
