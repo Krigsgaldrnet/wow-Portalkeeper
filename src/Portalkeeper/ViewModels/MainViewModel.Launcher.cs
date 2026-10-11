@@ -427,12 +427,23 @@ public sealed partial class MainViewModel
     private async Task SyncRequiredAndShareAsync()
     {
         await ClearCacheIfRealmAsksAsync();
-        AdoptRenamedPatches();
-        await CleanupRetiredPatchesAsync();
-        await EnforceRealmClientAsync();
-        EnsureLongPatchNames();
-        await SyncRequiredAsync();
-        RecordInstalledPatches();
+        // The client has to load the realm's patch names before any patch is moved to one: with a
+        // Wow.exe that can't be set up, the patches it has are the only ones it loads.
+        var ready = await PrepareLongPatchNamesAsync();
+        if (!ready && _clientCheck != ClientCheck.Ok)
+        {
+            // Only the realm's own client is changed. Find out whether this is one, then try again.
+            await EnforceRealmClientAsync();
+            ready = await PrepareLongPatchNamesAsync();
+        }
+        if (ready)
+        {
+            await AdoptRenamedPatchesAsync();
+            await CleanupRetiredPatchesAsync();
+            await EnforceRealmClientAsync();
+            await SyncRequiredAsync();
+            RecordInstalledPatches();
+        }
         await RefreshSharingAsync();
     }
 
@@ -526,6 +537,11 @@ public sealed partial class MainViewModel
             .Select(p => Path.Combine(root, p.InstallDirectory, p.FileName)));
         if (SameDirectory(root, EffectiveClientPath))
             files.AddRange(Patches.Where(p => p.Destination.Length > 0).Select(p => p.Destination));
+        // Patches this realm installed and hasn't taken out yet are RetiredPatchService's to remove
+        // (it puts back what they replaced), not files the realm never shipped.
+        var identity = RealmIdentity.FromRealm(realm);
+        files.AddRange(RetiredPatchService.Load(root).Where(e => e.Realm == identity)
+            .Select(e => Path.Combine(root, e.Path.Replace('/', Path.DirectorySeparatorChar))));
         return files;
     }
 
@@ -585,7 +601,7 @@ public sealed partial class MainViewModel
     /// Before the old names are cleaned up: a patch the realm renamed is copied to its new name
     /// instead of being downloaded again (RetiredPatchService.AdoptRenamed).
     /// </summary>
-    private void AdoptRenamedPatches()
+    private async Task AdoptRenamedPatchesAsync()
     {
         var realm = _realmInfo;
         if (realm is null || !ClientValid || !RealmConfigured || IsIsolatedRealm || IsGameRunning
@@ -594,32 +610,43 @@ public sealed partial class MainViewModel
         try
         {
             var root = EffectiveClientPath;
+            var identity = RealmIdentity.FromRealm(realm);
             var wanted = realm.Patches.Where(p => p.InstallMode == PatchInstallMode.File && p.Sha256.Length > 0)
                 .Select(p => (ManagedPath.Resolve(root, Path.Combine(ManagedPath.Relative(p.InstallDirectory),
                     ManagedPath.Relative(p.FileName, true))), p.Sha256)).ToArray();
-            if (RetiredPatchService.AdoptRenamed(root, RealmIdentity.FromRealm(realm), wanted) > 0) RefreshPatches();
+            if (wanted.All(w => File.Exists(w.Item1))) return;
+            SetSyncStatus("Updating realm files...");
+            // Copying and hashing a few hundred MB: not on the UI thread.
+            var adopted = await Task.Run(() => RetiredPatchService.AdoptRenamed(root, identity, wanted));
+            _syncStatus = "";
+            if (adopted > 0) RefreshPatches();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { _syncStatus = ""; }
     }
 
     /// <summary>
     /// The built-in realm names its patches after what they do, which a stock client doesn't load:
-    /// LongPatchNameService sets the client's Wow.exe up for them. Returns false, with a status for
-    /// the player, when that couldn't be done.
+    /// LongPatchNameService sets the client's Wow.exe up for them. Returns true when the client loads
+    /// the realm's names (or the realm needs nothing), false when it doesn't yet: then no patch may be
+    /// moved to a new name. Only a client known to be the realm's is changed, never under a running
+    /// game or a client download, and sharing is stopped first (a torrent may have the file open).
     /// </summary>
-    private bool EnsureLongPatchNames()
+    private async Task<bool> PrepareLongPatchNamesAsync()
     {
         var realm = _realmInfo;
         if (realm is null || !ClientValid || IsIsolatedRealm || !RealmBranding.IsBuiltIn(realm)
             || !LongPatchNameService.Needed(realm))
             return true;
-        if (IsGameRunning) return true; // the running game has the file open; the next start checks again
         try
         {
             var root = EffectiveClientPath;
             var executable = ClientService.FindWowExecutable(root, realm.Client.Executable)
                 ?? throw new FileNotFoundException("Wow.exe was not found in the client folder.");
-            LongPatchNameService.Ensure(root, executable);
+            if (await Task.Run(() => LongPatchNameService.IsSetUp(executable))) return true;
+            if (IsGameRunning || _isInstallingClient) return false;
+            if (_clientCheck != ClientCheck.Ok && !ClientConformanceService.IsRealmInstall(root)) return false;
+            await StopAllSharingAsync();
+            await Task.Run(() => LongPatchNameService.Ensure(root, executable));
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)

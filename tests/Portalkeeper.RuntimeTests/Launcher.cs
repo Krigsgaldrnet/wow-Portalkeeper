@@ -662,9 +662,11 @@ internal static partial class Program
 
         // Which names a stock client loads by itself.
         check("one-character patches are stock names", LongPatchNameService.IsStockName("patch-W.MPQ")
-            && LongPatchNameService.IsStockName("patch-4.mpq") && LongPatchNameService.IsStockName("patch-enUS-3.MPQ"));
+            && LongPatchNameService.IsStockName("patch-4.mpq") && LongPatchNameService.IsStockName("patch-enUS-3.MPQ")
+            && LongPatchNameService.IsStockName("PATCH-enUS.mpq"));
         check("longer names are not", !LongPatchNameService.IsStockName("patch-z40-druid-forms.MPQ")
-            && !LongPatchNameService.IsStockName("patch-WW.MPQ") && !LongPatchNameService.IsStockName("patch-enUS-10.MPQ"));
+            && !LongPatchNameService.IsStockName("patch-WW.MPQ") && !LongPatchNameService.IsStockName("patch-enUS-10.MPQ")
+            && !LongPatchNameService.IsStockName("patch-test.MPQ"));
         RealmInfo Realm(params string[] files) => new()
         {
             Patches = files.Select(f => new PatchDefinition { Id = f, FileName = f, InstallDirectory = "Data" }).ToArray(),
@@ -680,31 +682,64 @@ internal static partial class Program
         var stock = Bytes(40, 4096).Select(b => b == (byte)'p' ? (byte)'q' : b)
             .Concat(Encoding.ASCII.GetBytes("patch-%s-?.MPQ\0\0patch-?.MPQ\0patch-%s.MPQ\0")).Concat(Bytes(41, 512).Select(b => b == (byte)'p' ? (byte)'q' : b)).ToArray();
         File.WriteAllBytes(exe, stock);
-        check("a stock client is changed", LongPatchNameService.Ensure(client, exe));
+        string[] Backups() => Directory.Exists(Path.Combine(client, ".portalkeeper", "backups", "executable"))
+            ? Directory.EnumerateFiles(Path.Combine(client, ".portalkeeper", "backups", "executable"), "*", SearchOption.AllDirectories).ToArray()
+            : [];
+        check("a stock client is not set up yet", !LongPatchNameService.IsSetUp(exe) && Backups().Length == 0
+            && File.ReadAllBytes(exe).AsSpan().SequenceEqual(stock));
+        check("a stock client is changed", LongPatchNameService.Ensure(client, exe) && LongPatchNameService.IsSetUp(exe));
         var edited = File.ReadAllBytes(exe);
         var differences = Enumerable.Range(0, stock.Length).Where(i => stock[i] != edited[i]).ToArray();
         check("exactly the two wildcard characters change", edited.Length == stock.Length && differences.Length == 2
             && differences.All(i => stock[i] == (byte)'?' && edited[i] == (byte)'*'));
         check("both patterns take any name now", Encoding.ASCII.GetString(edited).Contains("patch-%s-*.MPQ\0\0patch-*.MPQ\0patch-%s.MPQ\0", StringComparison.Ordinal));
-        var backups = Directory.EnumerateFiles(Path.Combine(client, ".portalkeeper", "backups", "executable"), "Wow.exe", SearchOption.AllDirectories).ToArray();
-        check("the file it replaced is kept", backups.Length == 1 && File.ReadAllBytes(backups[0]).AsSpan().SequenceEqual(stock));
+        check("the file it replaced is kept", Backups().Length == 1 && Path.GetFileName(Backups()[0]) == "Wow.exe"
+            && File.ReadAllBytes(Backups()[0]).AsSpan().SequenceEqual(stock));
         check("a client that's set up is left alone", !LongPatchNameService.Ensure(client, exe)
-            && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited) && backups.Length == 1
+            && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited) && Backups().Length == 1
             && Directory.EnumerateFiles(client).Count() == 1);
+        File.WriteAllBytes(exe, stock);
+        check("the same client set up again keeps one backup", LongPatchNameService.Ensure(client, exe)
+            && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited) && Backups().Length == 1);
+
+        // A read-only Wow.exe (some installs have one) is still set up, and stays read-only.
+        File.WriteAllBytes(exe, stock);
+        if (OperatingSystem.IsWindows()) File.SetAttributes(exe, File.GetAttributes(exe) | FileAttributes.ReadOnly);
+        else File.SetUnixFileMode(exe, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        var readOnlyDone = LongPatchNameService.Ensure(client, exe);
+        var stillReadOnly = OperatingSystem.IsWindows()
+            ? (File.GetAttributes(exe) & FileAttributes.ReadOnly) != 0
+            : File.GetUnixFileMode(exe) == (UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        check("a read-only client is set up and stays read-only", readOnlyDone && stillReadOnly
+            && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited) && Backups().Length == 1
+            && Directory.EnumerateFiles(client).Count() == 1);
+        if (OperatingSystem.IsWindows()) File.SetAttributes(exe, FileAttributes.Normal);
+        else File.SetUnixFileMode(exe, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        foreach (var backup in Backups())
+            if (OperatingSystem.IsWindows()) File.SetAttributes(backup, FileAttributes.Normal);
+            else File.SetUnixFileMode(backup, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         var half = (byte[])edited.Clone();
         half[differences[0]] = (byte)'?';
         File.WriteAllBytes(exe, half);
-        check("a half-edited client is finished", LongPatchNameService.Ensure(client, exe) && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited));
+        check("a half-edited client is finished", !LongPatchNameService.IsSetUp(exe) && LongPatchNameService.Ensure(client, exe)
+            && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited));
+        var backupsSoFar = Backups().Length;
         var foreign = Path.Combine(client, "Other.exe");
         File.WriteAllBytes(foreign, Bytes(42, 2048).Select(b => b == (byte)'p' ? (byte)'q' : b).ToArray());
         var refused = false;
         try { LongPatchNameService.Ensure(client, foreign); } catch (InvalidDataException) { refused = true; }
         check("a file without the patterns is refused and untouched", refused
             && File.ReadAllBytes(foreign).AsSpan().SequenceEqual(Bytes(42, 2048).Select(b => b == (byte)'p' ? (byte)'q' : b).ToArray()));
-        File.WriteAllBytes(foreign, stock.Concat(Encoding.ASCII.GetBytes("patch-?.MPQ\0")).ToArray());
+        var twice = stock.Concat(Encoding.ASCII.GetBytes("patch-?.MPQ\0")).ToArray();
+        File.WriteAllBytes(foreign, twice);
         refused = false;
         try { LongPatchNameService.Ensure(client, foreign); } catch (InvalidDataException) { refused = true; }
-        check("a pattern that's there twice is refused", refused);
+        var asked = false;
+        try { LongPatchNameService.IsSetUp(foreign); } catch (InvalidDataException) { asked = true; }
+        check("a pattern that's there twice is refused and untouched", refused && asked
+            && File.ReadAllBytes(foreign).AsSpan().SequenceEqual(twice));
+        check("a refused file leaves no backup and no temp file", Backups().Length == backupsSoFar
+            && Directory.EnumerateFiles(client).Count() == 2);
 
         // The login patch is known by its section, whatever its file is called.
         check("the login patch is found under a new name", RealmBranding.IsLoginPatch(new PatchDefinition { Id = "LauncherLogin", FileName = "patch-z20-login-screen.MPQ" })
