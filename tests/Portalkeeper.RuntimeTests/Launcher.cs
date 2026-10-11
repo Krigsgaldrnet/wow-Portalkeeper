@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Portalkeeper.Models;
 using Portalkeeper.Services;
 
 namespace Portalkeeper.RuntimeTests;
@@ -44,6 +45,7 @@ internal static partial class Program
 
             // Retired realm patches: removed only while still ours, the client file they replaced restored.
             await RetiredPatchChecks(root, Check);
+            LongPatchNameChecks(root, Check);
 
             // Saved login.
             var sessionPath = Path.Combine(root, "session", "launcher-session.dat");
@@ -651,5 +653,90 @@ internal static partial class Program
         check("a dropped ledger patch is removed and its original put back",
             File.ReadAllBytes(k).AsSpan().SequenceEqual(Bytes(7, 1234)) && !File.Exists(mine)
             && RetiredPatchService.Load(e).All(x => x.Path != "Data/patch-K.MPQ"));
+    }
+
+    private static void LongPatchNameChecks(string root, Action<string, bool> check)
+    {
+        static byte[] Bytes(int seed, int length) { var b = new byte[length]; new Random(seed).NextBytes(b); return b; }
+        string Hash(byte[] b) => Convert.ToHexString(SHA256.HashData(b)).ToLowerInvariant();
+
+        // Which names a stock client loads by itself.
+        check("one-character patches are stock names", LongPatchNameService.IsStockName("patch-W.MPQ")
+            && LongPatchNameService.IsStockName("patch-4.mpq") && LongPatchNameService.IsStockName("patch-enUS-3.MPQ"));
+        check("longer names are not", !LongPatchNameService.IsStockName("patch-z40-druid-forms.MPQ")
+            && !LongPatchNameService.IsStockName("patch-WW.MPQ") && !LongPatchNameService.IsStockName("patch-enUS-10.MPQ"));
+        RealmInfo Realm(params string[] files) => new()
+        {
+            Patches = files.Select(f => new PatchDefinition { Id = f, FileName = f, InstallDirectory = "Data" }).ToArray(),
+        };
+        check("a realm of one-character patches needs nothing", !LongPatchNameService.Needed(Realm("patch-K.MPQ", "patch-W.MPQ")));
+        check("a long-named patch needs the client set up", LongPatchNameService.Needed(Realm("patch-K.MPQ", "patch-z80-spells-and-items.MPQ")));
+        check("a file that isn't a patch MPQ doesn't", !LongPatchNameService.Needed(Realm("d3d9.dll", "notes-for-players.txt")));
+
+        // The edit itself, on a stand-in for Wow.exe that holds the client's two patterns.
+        var client = Path.Combine(root, "longnames");
+        Directory.CreateDirectory(client);
+        var exe = Path.Combine(client, "Wow.exe");
+        var stock = Bytes(40, 4096).Select(b => b == (byte)'p' ? (byte)'q' : b)
+            .Concat(Encoding.ASCII.GetBytes("patch-%s-?.MPQ\0\0patch-?.MPQ\0patch-%s.MPQ\0")).Concat(Bytes(41, 512).Select(b => b == (byte)'p' ? (byte)'q' : b)).ToArray();
+        File.WriteAllBytes(exe, stock);
+        check("a stock client is changed", LongPatchNameService.Ensure(client, exe));
+        var edited = File.ReadAllBytes(exe);
+        var differences = Enumerable.Range(0, stock.Length).Where(i => stock[i] != edited[i]).ToArray();
+        check("exactly the two wildcard characters change", edited.Length == stock.Length && differences.Length == 2
+            && differences.All(i => stock[i] == (byte)'?' && edited[i] == (byte)'*'));
+        check("both patterns take any name now", Encoding.ASCII.GetString(edited).Contains("patch-%s-*.MPQ\0\0patch-*.MPQ\0patch-%s.MPQ\0", StringComparison.Ordinal));
+        var backups = Directory.EnumerateFiles(Path.Combine(client, ".portalkeeper", "backups", "executable"), "Wow.exe", SearchOption.AllDirectories).ToArray();
+        check("the file it replaced is kept", backups.Length == 1 && File.ReadAllBytes(backups[0]).AsSpan().SequenceEqual(stock));
+        check("a client that's set up is left alone", !LongPatchNameService.Ensure(client, exe)
+            && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited) && backups.Length == 1
+            && Directory.EnumerateFiles(client).Count() == 1);
+        var half = (byte[])edited.Clone();
+        half[differences[0]] = (byte)'?';
+        File.WriteAllBytes(exe, half);
+        check("a half-edited client is finished", LongPatchNameService.Ensure(client, exe) && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited));
+        var foreign = Path.Combine(client, "Other.exe");
+        File.WriteAllBytes(foreign, Bytes(42, 2048).Select(b => b == (byte)'p' ? (byte)'q' : b).ToArray());
+        var refused = false;
+        try { LongPatchNameService.Ensure(client, foreign); } catch (InvalidDataException) { refused = true; }
+        check("a file without the patterns is refused and untouched", refused
+            && File.ReadAllBytes(foreign).AsSpan().SequenceEqual(Bytes(42, 2048).Select(b => b == (byte)'p' ? (byte)'q' : b).ToArray()));
+        File.WriteAllBytes(foreign, stock.Concat(Encoding.ASCII.GetBytes("patch-?.MPQ\0")).ToArray());
+        refused = false;
+        try { LongPatchNameService.Ensure(client, foreign); } catch (InvalidDataException) { refused = true; }
+        check("a pattern that's there twice is refused", refused);
+
+        // The login patch is known by its section, whatever its file is called.
+        check("the login patch is found under a new name", RealmBranding.IsLoginPatch(new PatchDefinition { Id = "LauncherLogin", FileName = "patch-z20-login-screen.MPQ" })
+            && RealmBranding.IsLoginPatch(new PatchDefinition { Id = "Other", FileName = "patch-L.MPQ" })
+            && !RealmBranding.IsLoginPatch(new PatchDefinition { Id = "SpellCooldowns", FileName = "patch-z80-spells-and-items.MPQ" }));
+
+        // A renamed patch is copied from the old name instead of downloaded again.
+        var data = Path.Combine(client, "Data");
+        Directory.CreateDirectory(data);
+        var w = Bytes(43, 9_000);
+        var oldW = Path.Combine(data, "patch-W.MPQ");
+        var newW = Path.Combine(data, "patch-z80-spells-and-items.MPQ");
+        File.WriteAllBytes(oldW, w);
+        RetiredPatchService.RecordInstall(client, "r1", oldW, Hash(w), null, []);
+        check("another realm's patch is not adopted", RetiredPatchService.AdoptRenamed(client, "r2", [(newW, Hash(w))]) == 0 && !File.Exists(newW));
+        check("a patch with other content is not adopted", RetiredPatchService.AdoptRenamed(client, "r1", [(newW, Hash(Bytes(44, 9_000)))]) == 0 && !File.Exists(newW));
+        check("a renamed patch is copied to its new name", RetiredPatchService.AdoptRenamed(client, "r1", [(newW, Hash(w))]) == 1
+            && File.ReadAllBytes(newW).AsSpan().SequenceEqual(w) && File.Exists(oldW));
+        check("both names are in the ledger until cleanup", RetiredPatchService.Load(client).Count == 2
+            && RetiredPatchService.Load(client).Any(e => e.Path == "Data/patch-z80-spells-and-items.MPQ" && e.Original is null));
+        check("an installed patch is not copied again", RetiredPatchService.AdoptRenamed(client, "r1", [(newW, Hash(w))]) == 0);
+        var cleaned = RetiredPatchService.CleanupAsync(client, "r1", ["Data/patch-z80-spells-and-items.MPQ"], [], null, null, null, null, CancellationToken.None)
+            .GetAwaiter().GetResult();
+        check("cleanup then removes the old name only", cleaned is { Removed: 1, Restored: 0, Pending: 0 } && !File.Exists(oldW)
+            && File.ReadAllBytes(newW).AsSpan().SequenceEqual(w) && !Directory.EnumerateFiles(data, "*.tmp").Any());
+        var k = Bytes(46, 9_000);
+        var oldK = Path.Combine(data, "patch-K.MPQ");
+        var newK = Path.Combine(data, "patch-z10-class-combos.MPQ");
+        File.WriteAllBytes(oldK, k);
+        RetiredPatchService.RecordInstall(client, "r1", oldK, Hash(k), null, []);
+        File.WriteAllBytes(oldK, Bytes(45, 9_000)); // same size, not our file any more
+        check("a changed file under the old name is not adopted", RetiredPatchService.AdoptRenamed(client, "r1", [(newK, Hash(k))]) == 0
+            && !File.Exists(newK) && !Directory.EnumerateFiles(data, "*.tmp").Any());
     }
 }
