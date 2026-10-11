@@ -130,6 +130,47 @@ public static class RetiredPatchService
     }
 
     /// <summary>
+    /// A patch the realm only renamed doesn't have to be downloaded again: when one of
+    /// <paramref name="wanted"/> (full path, SHA-256) is missing and a patch <paramref name="realm"/>
+    /// installed under another name is byte-for-byte that file, it is copied to the new name. The old
+    /// one stays for <see cref="CleanupAsync"/>, which also puts back whatever it once replaced.
+    /// Returns how many files were copied; one that can't be copied is simply downloaded later.
+    /// </summary>
+    public static int AdoptRenamed(string root, string realm, IEnumerable<(string Destination, string Sha256)> wanted)
+    {
+        var ledger = Load(root);
+        var adopted = 0;
+        foreach (var (destination, sha256) in wanted)
+        {
+            if (sha256.Length == 0 || File.Exists(destination)) continue;
+            var relative = Normalize(System.IO.Path.GetRelativePath(root, destination));
+            foreach (var entry in ledger.Where(e => e.Realm == realm && !SamePath(e.Path, relative)
+                         && e.Sha256.Equals(sha256, StringComparison.OrdinalIgnoreCase)))
+            {
+                var temp = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try
+                {
+                    var source = ManagedPath.Resolve(root, entry.Path);
+                    ManagedPath.Resolve(root, relative);
+                    ManagedRuntimeWriteGuard.Check(root, destination);
+                    if (!File.Exists(source) || new FileInfo(source).Length != entry.Size) continue;
+                    Directory.CreateDirectory(System.IO.Path.GetDirectoryName(destination)!);
+                    File.Copy(source, temp);
+                    if (!Sha256Matches(temp, sha256)) continue;
+                    File.Move(temp, destination, false);
+                    RecordInstall(root, realm, destination, sha256, null, []);
+                    adopted++;
+                    break;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException) { }
+                finally { if (File.Exists(temp)) File.Delete(temp); }
+            }
+        }
+        if (adopted > 0) PatchService.ClearClientCache(root);
+        return adopted;
+    }
+
+    /// <summary>
     /// Removes every patch <paramref name="realm"/> installed (ledger) or shipped before launchers
     /// kept one (<paramref name="known"/>; pass it only for that realm) that isn't at one of
     /// <paramref name="currentPaths"/>, and restores what it replaced. <paramref name="download"/>

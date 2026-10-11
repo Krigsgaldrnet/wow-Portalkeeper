@@ -582,6 +582,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             ApplyClientInfo(_clientService.ValidateClient(ClientPath, _realmInfo.Client));
             if (!await EnforceRealmClientAsync())
                 throw new InvalidOperationException(_clientCheckStatus.Length > 0 ? _clientCheckStatus : "World of Warcraft doesn't match the realm's client.");
+            if (!EnsureLongPatchNames())
+                throw new InvalidOperationException("World of Warcraft couldn't be set up for the realm's patches.");
             await ClearCacheIfRealmAsksAsync();
             await PrepareIsolatedRuntimeAsync();
             var effectiveClient = _clientService.ValidateClient(EffectiveClientPath, _realmInfo.Client);

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Portalkeeper.Models;
 
 namespace Portalkeeper.Services;
 
@@ -71,8 +72,15 @@ public static class RealmBranding
     /// <summary>
     /// The realm patch whose AccountLogin.lua signs in with the launcher login (wow-server
     /// tools/client-patches/login). The game password is only handed to clients that install it.
+    /// It is known by its realm.conf section, [Patch.LauncherLogin], whatever its file is called; the
+    /// file name is how launchers before 0.5.12 knew it, and still counts.
     /// </summary>
+    public const string LoginPatchId = "LauncherLogin";
     public const string LoginPatchFileName = "patch-L.MPQ";
+
+    public static bool IsLoginPatch(PatchDefinition patch) => patch.InstallMode == PatchInstallMode.File
+        && (string.Equals(patch.Id, LoginPatchId, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(patch.FileName, LoginPatchFileName, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Client files the realm's client torrent used to carry and doesn't want any more. Removed while

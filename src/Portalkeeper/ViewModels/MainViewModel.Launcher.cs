@@ -159,8 +159,7 @@ public sealed partial class MainViewModel
     /// ships the login patch that takes it (a stock login screen would list it as an account name).
     /// </summary>
     private string? GamePasswordForLaunch(RealmInfo realm) =>
-        RealmBranding.IsBuiltIn(realm) && realm.Patches.Any(p => p.InstallMode == PatchInstallMode.File
-            && string.Equals(p.FileName, RealmBranding.LoginPatchFileName, StringComparison.OrdinalIgnoreCase))
+        RealmBranding.IsBuiltIn(realm) && realm.Patches.Any(RealmBranding.IsLoginPatch)
             ? _session?.GamePassword
             : null;
 
@@ -428,8 +427,10 @@ public sealed partial class MainViewModel
     private async Task SyncRequiredAndShareAsync()
     {
         await ClearCacheIfRealmAsksAsync();
+        AdoptRenamedPatches();
         await CleanupRetiredPatchesAsync();
         await EnforceRealmClientAsync();
+        EnsureLongPatchNames();
         await SyncRequiredAsync();
         RecordInstalledPatches();
         await RefreshSharingAsync();
@@ -578,6 +579,55 @@ public sealed partial class MainViewModel
             UpdateLaunchReadinessStatus();
         }
         finally { _isCleaningPatches = false; }
+    }
+
+    /// <summary>
+    /// Before the old names are cleaned up: a patch the realm renamed is copied to its new name
+    /// instead of being downloaded again (RetiredPatchService.AdoptRenamed).
+    /// </summary>
+    private void AdoptRenamedPatches()
+    {
+        var realm = _realmInfo;
+        if (realm is null || !ClientValid || !RealmConfigured || IsIsolatedRealm || IsGameRunning
+            || IsLaunching || _isInstallingClient || _isManagingComponents || _isCleaningPatches || _isInstallingRequired)
+            return;
+        try
+        {
+            var root = EffectiveClientPath;
+            var wanted = realm.Patches.Where(p => p.InstallMode == PatchInstallMode.File && p.Sha256.Length > 0)
+                .Select(p => (ManagedPath.Resolve(root, Path.Combine(ManagedPath.Relative(p.InstallDirectory),
+                    ManagedPath.Relative(p.FileName, true))), p.Sha256)).ToArray();
+            if (RetiredPatchService.AdoptRenamed(root, RealmIdentity.FromRealm(realm), wanted) > 0) RefreshPatches();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { }
+    }
+
+    /// <summary>
+    /// The built-in realm names its patches after what they do, which a stock client doesn't load:
+    /// LongPatchNameService sets the client's Wow.exe up for them. Returns false, with a status for
+    /// the player, when that couldn't be done.
+    /// </summary>
+    private bool EnsureLongPatchNames()
+    {
+        var realm = _realmInfo;
+        if (realm is null || !ClientValid || IsIsolatedRealm || !RealmBranding.IsBuiltIn(realm)
+            || !LongPatchNameService.Needed(realm))
+            return true;
+        if (IsGameRunning) return true; // the running game has the file open; the next start checks again
+        try
+        {
+            var root = EffectiveClientPath;
+            var executable = ClientService.FindWowExecutable(root, realm.Client.Executable)
+                ?? throw new FileNotFoundException("Wow.exe was not found in the client folder.");
+            LongPatchNameService.Ensure(root, executable);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
+        {
+            _syncStatus = UserErrorService.Format(ex, "Couldn't set World of Warcraft up for the realm's patches; CHECK AGAIN retries");
+            UpdateLaunchReadinessStatus();
+            return false;
+        }
     }
 
     /// <summary>A file about to be replaced may be open in a torrent: stop sharing until the next refresh.</summary>

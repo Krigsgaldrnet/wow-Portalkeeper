@@ -11,6 +11,8 @@
 >
 > - One clean launcher screen: realm status, a single status card (log in, install, downloading, up to date), settings and a big ENTER REALM button.
 >
+> - The realm's patches can be named after what they do (`patch-z40-druid-forms.MPQ`). The stock client only loads `patch-X.MPQ`, so when the built-in realm lists a longer name the launcher changes two bytes in the client's `Wow.exe` (the `?` of its `patch-?.MPQ` patterns becomes `*`; the file it replaces is kept in `.portalkeeper/backups/executable`). A patch the realm only renames is copied from the old file, not downloaded again.
+>
 > - Patch changes clear the client's `Cache` folder. For server changes the client also caches (items, spells, quests), change the text in the realm folder's `cache-version.txt` (for example `date +%s > realm-public/cache-version.txt`) and every launcher clears Cache once before its next launch.
 >
 > The launcher's title font is [Cinzel](https://github.com/NDISCOVER/Cinzel) by Natanael Gama, under the SIL Open Font License 1.1 (`src/Portalkeeper/Assets/Fonts/Cinzel-OFL.txt`).
