@@ -13,6 +13,8 @@ public sealed partial class MainViewModel
     private string? _readyInstaller;
     private string _readyVersion = "";
     private bool _isDownloadingUpdate;
+    private string _lastDownloadVersion = "";
+    private DateTimeOffset _lastDownloadUtc;
 
     /// <summary>Raised with the verified installer's path when it's time to close and update.</summary>
     public event Action<string>? SelfUpdateReady;
@@ -41,11 +43,16 @@ public sealed partial class MainViewModel
     }
 
     /// <summary>Downloads the installer for a newer release (once) when this build can update itself.</summary>
-    private async Task PrepareSelfUpdateAsync(string tag)
+    private async Task PrepareSelfUpdateAsync(string tag, bool manual = false)
     {
         if (!CanUpdateInPlace || !_savedSettings.AutoUpdatePortalkeeper || _isDownloadingUpdate) return;
         if (!PortalkeeperReleaseService.TryStableTag(tag, out var version)) return;
         if (_readyInstaller is not null && _readyVersion == version) return;
+        // Release checks now run every minute, but each attempt asks GitHub's API for the installer's
+        // checksum (60 requests an hour per address), so a release is only tried once per 10 minutes.
+        if (!manual && _lastDownloadVersion == version && DateTimeOffset.UtcNow - _lastDownloadUtc < TimeSpan.FromMinutes(10)) return;
+        _lastDownloadVersion = version;
+        _lastDownloadUtc = DateTimeOffset.UtcNow;
         _isDownloadingUpdate = true;
         try
         {
@@ -55,7 +62,7 @@ public sealed partial class MainViewModel
         }
         catch (Exception ex)
         {
-            // The notice and VIEW RELEASE still work; the next check tries again.
+            // The notice and VIEW RELEASE still work; a check 10 minutes on tries again.
             _updateStatus = UserErrorService.Format(ex, "The update couldn't be downloaded");
         }
         finally
@@ -98,8 +105,10 @@ public sealed partial class MainViewModel
         while (await timer.WaitForNextTickAsync())
         {
             TryApplySelfUpdate();
-            // A launcher left open for sharing still looks for releases (the check itself is throttled).
-            if (++ticks % 120 == 0) await CheckForUpdatesAsync(manual: false);
+            // Every minute: the portal answers, and the release workflow tells it about a new release,
+            // so one arrives within about a minute even in a launcher left open for sharing (GitHub
+            // itself is still asked at most every 6 hours).
+            if (++ticks % 2 == 0) await CheckForUpdatesAsync(manual: false);
         }
     }
 }

@@ -51,7 +51,7 @@ public sealed partial class MainViewModel
             if (result.State != ReleaseCheckState.Failed)
             {
                 _releaseTag = result.State == ReleaseCheckState.Available ? result.Tag : null;
-                if (_releaseTag is not null) _ = PrepareSelfUpdateAsync(_releaseTag);
+                if (_releaseTag is not null) _ = PrepareSelfUpdateAsync(_releaseTag, manual);
                 _availableReleaseVersion = result.State == ReleaseCheckState.Available ? result.Version! : "";
                 _updateStatus = result.Message;
             }
