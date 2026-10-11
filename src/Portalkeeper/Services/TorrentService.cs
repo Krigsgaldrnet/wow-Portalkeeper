@@ -11,9 +11,17 @@ using MonoTorrent.Client;
 
 namespace Portalkeeper.Services;
 
-public sealed record TorrentProgress(double Percent, long DoneBytes, long TotalBytes, long DownloadRate, long UploadRate, int Peers);
+/// <param name="Peers">Other players sending to us.</param>
+/// <param name="WebSeeds">The realm's web seeds connected (its server sending the files over HTTP).</param>
+public sealed record TorrentProgress(double Percent, long DoneBytes, long TotalBytes, long DownloadRate, long UploadRate, int Peers, int WebSeeds = 0);
 
-public sealed record SharingSummary(int Shared, long UploadRate, int Peers);
+/// <param name="Shared">Torrents being shared: the client counts as one, however many files it has.</param>
+/// <param name="ClientShared">One of them is the client torrent asked about.</param>
+/// <param name="Peers">Players connected, each counted once however many torrents they get from us.</param>
+public sealed record SharingSummary(int Shared, long UploadRate, int Peers, bool ClientShared = false)
+{
+    public int PatchesShared => Shared - (ClientShared ? 1 : 0);
+}
 
 /// <summary>
 /// BitTorrent for the realm's client and patches (MonoTorrent). Downloads come from other players
@@ -106,10 +114,10 @@ public sealed class TorrentService
             {
                 if (manager.State == TorrentState.Error)
                     throw new IOException("Download failed: " + (manager.Error?.Exception?.Message ?? "unknown error") + ".");
-                progress?.Report(Progress(manager));
+                if (progress is not null) progress.Report(await ProgressAsync(manager));
                 await Task.Delay(500, cancellationToken);
             }
-            progress?.Report(Progress(manager));
+            if (progress is not null) progress.Report(await ProgressAsync(manager));
         }
         catch (OperationCanceledException)
         {
@@ -240,7 +248,7 @@ public sealed class TorrentService
         finally { _lock.Release(); }
     }
 
-    public SharingSummary Summary()
+    public async Task<SharingSummary> SummaryAsync(string? clientInfoHash = null)
     {
         var engine = _engine;
         if (engine is null) return _lastSummary = new SharingSummary(0, 0, 0);
@@ -249,7 +257,12 @@ public sealed class TorrentService
             // The list changes on MonoTorrent's own thread; copy it before looking at it.
             var sharing = engine.Torrents.ToArray().Where(m => m.Complete
                 && m.State is TorrentState.Seeding or TorrentState.Starting or TorrentState.Downloading).ToArray();
-            return _lastSummary = new SharingSummary(sharing.Length, sharing.Sum(m => m.Monitor.UploadRate), sharing.Sum(m => m.OpenConnections));
+            var players = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var manager in sharing)
+                foreach (var peer in await manager.GetPeersAsync())
+                    if (peer.Uri.Scheme is not ("http" or "https")) players.Add(peer.Uri.Host);
+            var client = clientInfoHash is not null && sharing.Any(m => Key(m.InfoHashes) == clientInfoHash);
+            return _lastSummary = new SharingSummary(sharing.Length, sharing.Sum(m => m.Monitor.UploadRate), players.Count, client);
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
@@ -309,9 +322,11 @@ public sealed class TorrentService
             UsePartialFiles = false,
             MaximumUploadRate = _uploadLimit,
             MaximumDiskReadRate = _gameRunning ? GameDiskReadLimit : 0,
-            // Prefer other players; fall back to the realm's web seed when they're slow or absent.
-            WebSeedDelay = TimeSpan.FromSeconds(5),
-            WebSeedSpeedTrigger = 2 * 1024 * 1024,
+            // The realm's web seed always helps, next to other players: players at home share the
+            // server's internet line anyway, and with a speed trigger a fast player shut the server
+            // out completely. The short delay lets the tracker's players connect first.
+            WebSeedDelay = TimeSpan.FromSeconds(2),
+            WebSeedSpeedTrigger = 0,
         };
         builder.ListenEndPoints = new Dictionary<string, IPEndPoint>
         {
@@ -371,11 +386,13 @@ public sealed class TorrentService
         await SaveFastResumeAsync(manager);
     }
 
-    private static TorrentProgress Progress(TorrentManager manager)
+    private static async Task<TorrentProgress> ProgressAsync(TorrentManager manager)
     {
         var total = manager.Torrent?.Size ?? 0;
+        var peers = await manager.GetPeersAsync();
+        var webSeeds = peers.Count(p => p.Uri.Scheme is "http" or "https");
         return new TorrentProgress(manager.Progress, (long)(total * manager.Progress / 100.0), total,
-            manager.Monitor.DownloadRate, manager.Monitor.UploadRate, manager.OpenConnections);
+            manager.Monitor.DownloadRate, manager.Monitor.UploadRate, peers.Count - webSeeds, webSeeds);
     }
 
     // Resume data lives next to a snapshot of each file's size and modification time.
