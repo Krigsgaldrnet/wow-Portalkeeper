@@ -594,6 +594,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 new AddonManifest { Addons = _realmInfo.Addons.ToList() });
             var unsatisfied = currentAddons.Where(a => a.Definition.Required && (!a.IsInstalled || a.IsUpdateAvailable)).ToArray();
             if (unsatisfied.Length > 0) throw new InvalidOperationException("Required addons need attention: " + string.Join(", ", unsatisfied.Select(a => a.Definition.Name)));
+            PrepareCombatLogsForLaunch();
             result = _realmLaunchService.PrepareAndLaunch(
                 EffectiveClientPath,
                 _realmInfo, ClientPath, AccountName, GamePasswordForLaunch(_realmInfo));
@@ -625,7 +626,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             var played = IsGameRunning;
             IsLaunching = false;
             IsGameRunning = false;
-            if (played) _ = ResumeSharingAfterGameAsync();
+            if (played)
+            {
+                _ = ResumeSharingAfterGameAsync();
+                _ = UploadCombatLogsAsync(afterGame: true);
+            }
         }
     }
 
@@ -865,6 +870,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CalendarAvailable));
         OnPropertyChanged(nameof(NewsAvailable));
         OnPropertyChanged(nameof(ArmoryAvailable));
+        OnPropertyChanged(nameof(CombatLogSharingOffered));
         OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
         UpdateLaunchReadinessStatus();
         NotifyHome();

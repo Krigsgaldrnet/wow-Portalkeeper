@@ -284,6 +284,9 @@ internal static partial class Program
                 (await ReleaseCheck("""{"tag":"main"}""", releaseSettings)).State == ReleaseCheckState.UpToDate && githubAsked == 0);
             var fallback = await ReleaseCheck("not json", new PortalkeeperSettings());
             Check("without a portal answer GitHub is asked", fallback.Tag == "v2.0.0" && githubAsked == 1);
+
+            // Combat logs shared with the realm: the launcher's own addon and the upload.
+            await CombatLogChecks(root, Check);
         }
         catch (Exception ex)
         {
