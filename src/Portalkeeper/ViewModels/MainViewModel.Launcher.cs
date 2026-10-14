@@ -368,12 +368,18 @@ public sealed partial class MainViewModel
     private static bool InstallsAutomatically(PatchInfo patch) =>
         patch.Definition.Requirement is ComponentRequirement.Required or ComponentRequirement.Recommended;
 
+    // An optional addon the player installed is kept current like a required one until they uninstall
+    // it. Personal addons (added by the player from GitHub) stay manual.
+    private static bool UpdatesAutomatically(AddonInfo addon) =>
+        !addon.Definition.Required && !addon.Definition.IsPersonal && addon.IsInstalled && addon.CanInstallOrUpdate;
+
     private bool NeedsRequiredSync => IsLoggedIn && ClientValid && _clientCheck == ClientCheck.Ok && RealmConfigured && !IsIsolatedRealm && AddonsLoaded
-        && (Patches.Any(p => InstallsAutomatically(p) && !p.IsValid) || !AddonsReady);
+        && (Patches.Any(p => InstallsAutomatically(p) && !p.IsValid) || !AddonsReady || _addons.Any(UpdatesAutomatically));
 
     /// <summary>
     /// Installs or updates every Required and Recommended patch and every Required addon the realm
-    /// lists, without asking: players only ever see the optional addons. Runs after login, when the
+    /// lists, without asking: players only ever see the optional addons. Optional addons the player
+    /// installed are updated here too, but a failed one never holds up the rest. Runs after login, when the
     /// client is set and whenever the realm configuration is refreshed (which is how a new patch
     /// version arrives).
     /// </summary>
@@ -405,6 +411,14 @@ public sealed partial class MainViewModel
             {
                 SetSyncStatus("Updating realm addons: " + addon.Name + "...");
                 await InstallOrUpdateAddonAsync(addon.Id);
+            }
+            var optional = _addons.Where(UpdatesAutomatically).Select(a => a.Definition).ToArray();
+            foreach (var addon in optional)
+            {
+                SetSyncStatus("Updating addons: " + addon.Name + "...");
+                // It stays "Update Available" in Manage Addons and is tried again on the next check.
+                try { await InstallOrUpdateAddonAsync(addon.Id); }
+                catch (Exception) { }
             }
             _syncStatus = "";
         }
@@ -741,7 +755,10 @@ public sealed partial class MainViewModel
         }
     }
 
-    /// <summary>Updates the optional addons the player installed (never installs new ones).</summary>
+    /// <summary>
+    /// Updates the optional addons the player installed (never installs new ones). SyncRequiredAsync
+    /// does this by itself; the button is for doing it right now.
+    /// </summary>
     public Task UpdateInstalledAddonsAsync() => RunComponentOperationAsync(async () =>
     {
         foreach (var addon in OptionalAddons.Where(a => a.IsInstalled && a.IsUpdateAvailable).Select(a => a.Definition).ToArray())
