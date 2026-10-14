@@ -143,6 +143,7 @@ public sealed partial class MainViewModel
         _clientTorrent = null;
         _patchTorrents.Clear();
         _sessionStore.Clear();
+        ForgetCombatLogOffer();
         NotifyLoginChanged();
         await ConfigureSharingAsync();
         if (session is not null) await _accountService.LogoutAsync(session);
@@ -175,6 +176,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(AccountName));
         OnPropertyChanged(nameof(AccountSummary));
         OnPropertyChanged(nameof(RememberedAccountName));
+        OnPropertyChanged(nameof(CombatLogSharingOffered));
         NotifyInstallChanged();
         UpdateLaunchReadinessStatus();
     }
@@ -426,6 +428,8 @@ public sealed partial class MainViewModel
 
     private async Task SyncRequiredAndShareAsync()
     {
+        // By itself: combat logs never wait for patches, and patches never wait for an upload.
+        _ = StartCombatLogSharingAsync();
         await ClearCacheIfRealmAsksAsync();
         // The client has to load the realm's patch names before any patch is moved to one: with a
         // Wow.exe that can't be set up, the patches it has are the only ones it loads.
@@ -927,7 +931,7 @@ public sealed partial class MainViewModel
     }
 
     /// <summary>Stops every transfer and saves resume data; called as Portalkeeper closes.</summary>
-    public Task ShutdownAsync() => _torrents.ShutdownAsync();
+    public Task ShutdownAsync() => Task.WhenAll(StopCombatLogUploadAsync(), _torrents.ShutdownAsync());
 
     // ---------------------------------------------------------
     // Formatting

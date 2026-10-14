@@ -493,7 +493,7 @@ public sealed class RealmLaunchService
             await Task.Delay(1000);
     }
 
-    private static bool IsLinuxGameProcessRunning(string wowExecutable)
+    internal static bool IsLinuxGameProcessRunning(string wowExecutable)
     {
         var normalizedPath = Path.GetFullPath(wowExecutable);
         const string procDirectory = "/proc";

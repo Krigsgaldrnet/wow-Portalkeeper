@@ -20,6 +20,8 @@ This fork is built for one realm and changes three upstream rules on purpose:
 
 * **The client's `Cache` folder is cleared** when a patch is installed, updated or removed (`PatchService.ClearClientCache`), and once per client whenever the realm's `realm/cache-version.txt` changes (`ClearCacheIfRealmAsksAsync`, after refreshes and before launch).
 
+* **Combat logs are shared with the realm only when the player turns it on** (`CombatLogUploadService`, `MainViewModel.CombatLog.cs`; Settings, off by default, and only shown when the portal's `api/launcher/combatlog.php` says the realm collects them). While it's on, the launcher writes its own addon into the client the game runs from (`Interface/AddOns/PortalkeeperCombatLog`, not in the realm's addon list) and deletes it when it's off; the addon turns combat logging on inside dungeons and raids. A log that was already there when the player opted in is renamed in place (`WoWCombatLog-before-sharing-...txt`), never uploaded. After the game exits, and once at start-up, `Logs/WoWCombatLog.txt` is moved to `Logs/PortalkeeperUpload/`, gzipped and uploaded in parts, and deleted only when the portal confirms it. Uploads never hold up a launch, stop when the game starts or Portalkeeper closes, fail quietly and continue next time; a log still waiting after 14 days is deleted.
+
 Keep these changes out of upstream pull requests.
 
 ## Project Purpose

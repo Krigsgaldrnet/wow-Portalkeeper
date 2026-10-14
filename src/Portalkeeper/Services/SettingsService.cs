@@ -79,6 +79,10 @@ public sealed class PortalkeeperSettings
     public bool ShareDownloads { get; set; } = true;
     public int ShareUploadLimitKiB { get; set; } = 2048;
     public int TorrentPort { get; set; }
+    // Opt-in: combat logging in dungeons and raids, uploaded to the realm (CombatLogUploadService).
+    public bool ShareCombatLogs { get; set; }
+    // Set when the option is turned on, until a log from before that has been renamed out of the way.
+    public bool CombatLogSetAsidePending { get; set; }
     // A client install that was paused or interrupted, resumed by INSTALL WOW.
     public string? PendingClientInstallPath { get; set; }
     // Installed Windows builds download and run new releases by themselves.
