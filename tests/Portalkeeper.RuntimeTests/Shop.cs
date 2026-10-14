@@ -15,8 +15,8 @@ internal static partial class Program
          "characters":[{"guid":7,"name":"Alys","race":10,"class":2,"gender":1,"level":62,"online":false},
                        {"guid":9,"name":"Bronn","race":3,"class":1,"gender":0,"level":12,"online":true}],
          "offers":[{"id":1,"category":"service","name":"Character Rename","description":"A new name.","icon":"","price":20,"owned":[7],"cannot":[]},
-                   {"id":101,"category":"pet","name":"Red Panda","description":"A companion.","icon":"","price":10,"owned":[],"cannot":[]},
-                   {"id":201,"category":"mount","name":"Great Red Panda","description":"A mount.","icon":"","price":40,"owned":[],"cannot":[9]},
+                   {"id":101,"category":"pet","name":"Red Panda","description":"A companion.","icon":"","price":10,"owned":[],"cannot":[],"preview":{"url":"file:///etc/passwd","frames":36}},
+                   {"id":201,"category":"mount","name":"Great Red Panda","description":"A mount.","icon":"","price":40,"owned":[],"cannot":[9],"preview":{"url":"https://portal.test/realm/shop/201.webp?v=5","frames":36}},
                    {"id":301,"category":"Toy","name":"Odd Thing","description":"","icon":"","price":50,"owned":[],"cannot":[]}],
          "cached_at":1760000000}
         """;
@@ -26,6 +26,9 @@ internal static partial class Program
         var api = new Uri("https://portal.test/api/launcher/");
         var session = new LauncherSession(FakeShopPortal.Token, "ALICE", DateTimeOffset.UtcNow.AddDays(30));
         CoinShopService Service(FakeShopPortal portal) => new(api, new HttpClient(portal));
+        // Pictures come from the stand-in too (it has none: 404), into a folder of their own, never the real one.
+        var previewDir = Path.Combine(Path.GetTempPath(), "portalkeeper-shop-previews-" + Guid.NewGuid().ToString("N")[..8]);
+        ShopViewModel Shop(FakeShopPortal portal) => new(Service(portal), session, new ShopPreviewService(previewDir, new HttpClient(portal)));
 
         // The listing.
         var portal = new FakeShopPortal();
@@ -38,6 +41,10 @@ internal static partial class Program
             && listing.CachedAt == DateTimeOffset.FromUnixTimeSeconds(1760000000));
         check("the listing is asked for with the launcher login", portal.Authorized == 1 && portal.Unauthorized == 0);
         check("an unknown category is kept, lower-cased", listing?.Offers[3].Category == "toy");
+        check("an offer's turntable picture is read",
+            listing?.Offers[2].Preview is { Frames: 36 } preview && preview.Url.AbsoluteUri == "https://portal.test/realm/shop/201.webp?v=5");
+        check("a picture that isn't http(s) is left out, and offers without one have none",
+            listing?.Offers[1].Preview is null && listing?.Offers[0].Preview is null);
 
         portal.ListingJson = """{"balance":3,"characters":null,"offers":[{"id":5,"price":2}]}""";
         listing = await Service(portal).GetListingAsync(session);
@@ -104,7 +111,7 @@ internal static partial class Program
 
         // The Shop window's view model: owned / can't use per character, the balance, the confirm step.
         portal = new FakeShopPortal();
-        using (var shop = new ShopViewModel(Service(portal), session))
+        using (var shop = Shop(portal))
         {
             await shop.LoadAsync();
             ShopOfferView Card(uint id) => shop.Offers.First(o => o.Offer.Id == id);
@@ -119,6 +126,7 @@ internal static partial class Program
             check("what another character couldn't use, this one can", Card(201).CanBuy);
             shop.SelectedCategory = shop.Categories.First(c => c.Key == "mount");
             check("a category tab shows only its offers", shop.Offers.Count == 1 && shop.Offers[0].Offer.Id == 201);
+            check("the stage shows the tab's first offer", shop.SelectedOffer?.Offer.Id == 201 && shop.Offers[0].IsSelected);
 
             shop.AskToBuy(shop.Offers[0]);
             check("the confirm step says what's left", shop.ConfirmDetail.StartsWith("You have 45 coins; 5 will be left.", StringComparison.Ordinal));
@@ -207,7 +215,7 @@ internal static partial class Program
         }
 
         // Asking again for the same card with another character names the new one.
-        using (var shop = new ShopViewModel(Service(new FakeShopPortal()), session))
+        using (var shop = Shop(new FakeShopPortal()))
         {
             await shop.LoadAsync();
             var pet = shop.Offers.First(o => o.Offer.Id == 101);
@@ -220,7 +228,7 @@ internal static partial class Program
 
         // A purchase that may have gone through stays on screen when the refresh after it fails.
         var flaky = new FakeShopPortal();
-        using (var shop = new ShopViewModel(Service(flaky), session))
+        using (var shop = Shop(flaky))
         {
             await shop.LoadAsync();
             flaky.BuyStatus = 502;
@@ -244,14 +252,29 @@ internal static partial class Program
             await shop.ConfirmBuyAsync();
             check("a failed refresh after a purchase doesn't turn it into an error",
                 !shop.StatusIsError && shop.StatusMessage.StartsWith("Red Panda is in Bronn's mailbox.", StringComparison.Ordinal) && shop.Balance == 35);
-        }
 
-        using (var shop = new ShopViewModel(Service(new FakeShopPortal { Status = 503, ListingJson = """{"error":"The shop is closed."}""" }), session))
+            // The stage across refreshes.
+            flaky.Status = 200;
+            flaky.ListingJson = ShopListingJson;
+            await shop.LoadAsync();
+            shop.SelectedCategory = shop.Categories.First(c => c.Key == ShopCategoryView.AllKey);
+            shop.SelectedOffer = shop.Offers.First(o => o.Offer.Id == 301);
+            var before = shop.SelectedOffer;
+            await shop.LoadAsync();
+            check("a refresh keeps the same offer on the stage", !ReferenceEquals(shop.SelectedOffer, before)
+                && shop.SelectedOffer?.Offer.Id == 301 && shop.Offers.Single(o => o.IsSelected).Offer.Id == 301);
+            flaky.ListingJson = """{"balance":35,"characters":[],"offers":[]}""";
+            await shop.LoadAsync();
+            check("a refresh with nothing for sale empties the stage", shop is { SelectedOffer: null, HasSelectedOffer: false, StagePicture: null });
+        }
+        try { Directory.Delete(previewDir, true); } catch (DirectoryNotFoundException) { }
+
+        using (var shop = Shop(new FakeShopPortal { Status = 503, ListingJson = """{"error":"The shop is closed."}""" }))
         {
             await shop.LoadAsync();
             check("a shop that can't open says why instead of a listing", shop.HasLoadError && !shop.ShowShop && shop.LoadError == "The shop is closed.");
         }
-        using (var shop = new ShopViewModel(Service(new FakeShopPortal { ListingJson = """{"balance":0,"characters":[],"offers":[{"id":1,"category":"pet","price":1}]}""" }), session))
+        using (var shop = Shop(new FakeShopPortal { ListingJson = """{"balance":0,"characters":[],"offers":[{"id":1,"category":"pet","price":1}]}""" }))
         {
             await shop.LoadAsync();
             check("an account without characters is told so, and nothing can be bought",

@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Portalkeeper.Models;
 using Portalkeeper.Services;
 
@@ -20,11 +21,26 @@ namespace Portalkeeper.ViewModels;
 /// mounts, companions and character services for one of the account's characters
 /// (<see cref="CoinShopService"/>). The listing is asked for when the window opens, after every
 /// purchase and on REFRESH; the portal keeps it for 15 seconds, so nothing here polls.
+/// Laid out like the retail game's shop: tiles on the left, the picked offer large on a stage on
+/// the right, as a turntable picture the player can turn when the realm has one.
 /// </summary>
 public sealed class ShopViewModel : ViewModelBase, IDisposable
 {
+    /// <summary>Pixels across a tile's picture frame (decoded that small: a strip per tile stays a few MB).</summary>
+    public const int TileFrameWidth = 168;
+    /// <summary>Full-size stage pictures kept decoded, so going back to one is instant.</summary>
+    private const int KeepStagePictures = 4;
+
     private readonly CoinShopService _service;
+    private readonly ShopPreviewService _previews;
     private readonly LauncherSession _session;
+    private readonly Dictionary<Uri, Task<Bitmap?>> _tilePictures = [];
+    private readonly List<(Uri Url, Bitmap Picture)> _stagePictures = [];
+    private CancellationTokenSource? _stageLoad;
+    private int _stageVersion;
+    private ShopOfferView? _selectedOffer;
+    private Bitmap? _stagePicture;
+    private bool _isStageLoading;
     private readonly CancellationTokenSource _closed = new();
     private readonly List<ShopOfferView> _allOffers = [];
     private int _loadVersion;
@@ -41,10 +57,11 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
     private ShopOfferView? _pendingOffer;
     private ShopCharacterView? _pendingCharacter;
 
-    public ShopViewModel(CoinShopService service, LauncherSession session)
+    public ShopViewModel(CoinShopService service, LauncherSession session, ShopPreviewService? previews = null)
     {
         _service = service;
         _session = session;
+        _previews = previews ?? new ShopPreviewService();
     }
 
     /// <summary>Raised when the portal says the login is no longer good (401/403), with its message.</summary>
@@ -104,6 +121,43 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
             FilterOffers();
         }
     }
+
+    /// <summary>The offer on the stage. Picking one on a tile only shows it; BUY on the stage buys it.</summary>
+    public ShopOfferView? SelectedOffer
+    {
+        get => _selectedOffer;
+        set
+        {
+            if (ReferenceEquals(_selectedOffer, value)) return;
+            if (_selectedOffer is not null) _selectedOffer.IsSelected = false;
+            _selectedOffer = value;
+            if (value is not null) value.IsSelected = true;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasSelectedOffer));
+            OnPropertyChanged(nameof(ShowStageIcon));
+            OnPropertyChanged(nameof(StageFrames));
+            _ = ShowOnStageAsync(value);
+        }
+    }
+    public bool HasSelectedOffer => _selectedOffer is not null;
+
+    /// <summary>The picked offer's turntable picture at full size, once it's here.</summary>
+    public Bitmap? StagePicture
+    {
+        get => _stagePicture;
+        private set
+        {
+            if (!SetProperty(ref _stagePicture, value)) return;
+            OnPropertyChanged(nameof(StageFrames));
+            OnPropertyChanged(nameof(HasStagePicture));
+            OnPropertyChanged(nameof(ShowStageIcon));
+        }
+    }
+    public int StageFrames => _stagePicture is null ? 1 : _selectedOffer?.Offer.Preview?.Frames ?? 1;
+    public bool HasStagePicture => _stagePicture is not null;
+    public bool IsStageLoading { get => _isStageLoading; private set { if (SetProperty(ref _isStageLoading, value)) OnPropertyChanged(nameof(ShowStageIcon)); } }
+    /// <summary>The drawn icon stands in on the stage for an offer without a picture (or one that didn't load).</summary>
+    public bool ShowStageIcon => _selectedOffer is not null && _stagePicture is null && !_isStageLoading;
 
     public string StatusMessage { get => _statusMessage; private set { if (SetProperty(ref _statusMessage, value)) OnPropertyChanged(nameof(HasStatus)); } }
     public bool StatusIsError { get => _statusIsError; private set => SetProperty(ref _statusIsError, value); }
@@ -201,6 +255,96 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
 
     public void CancelBuy() => PendingOffer = null;
 
+    private async Task ShowOnStageAsync(ShopOfferView? offer)
+    {
+        var version = ++_stageVersion;
+        // A newer pick drops the load of the last one: clicking through tiles decodes only what stays.
+        _stageLoad?.Cancel();
+        _stageLoad?.Dispose();
+        _stageLoad = null;
+        if (offer?.Offer.Preview is not { } preview)
+        {
+            IsStageLoading = false;
+            StagePicture = null;
+            return;
+        }
+        var kept = _stagePictures.FindIndex(p => p.Url == preview.Url);
+        if (kept >= 0)
+        {
+            var entry = _stagePictures[kept];
+            _stagePictures.RemoveAt(kept);
+            _stagePictures.Add(entry);
+            IsStageLoading = false;
+            StagePicture = entry.Picture;
+            return;
+        }
+
+        // The tile's small picture stands in until the full one is here.
+        IsStageLoading = true;
+        StagePicture = offer.Picture;
+        var load = _stageLoad = CancellationTokenSource.CreateLinkedTokenSource(_closed.Token);
+        Bitmap? picture = null;
+        try
+        {
+            picture = await _previews.LoadAsync(preview, cancellationToken: load.Token);
+        }
+        finally
+        {
+            if (version == _stageVersion && !_closed.IsCancellationRequested) IsStageLoading = false;
+        }
+        if (version != _stageVersion || _closed.IsCancellationRequested)
+        {
+            // Picked away (or closed) while it loaded: nobody is going to show it.
+            picture?.Dispose();
+            return;
+        }
+        if (picture is null)
+        {
+            // Not kept: picking it again tries again. The small one stays up meanwhile.
+            StagePicture = offer.Picture;
+            return;
+        }
+        _stagePictures.Add((preview.Url, picture));
+        while (_stagePictures.Count > KeepStagePictures)
+        {
+            var old = _stagePictures[0];
+            _stagePictures.RemoveAt(0);
+            if (ReferenceEquals(old.Picture, _stagePicture)) _retired.Add(old.Picture);
+            else old.Picture.Dispose();
+        }
+        StagePicture = picture;
+        DisposeRetired();
+    }
+
+    // Stage pictures dropped from the keep list while still on screen: disposed once they're not.
+    private readonly List<Bitmap> _retired = [];
+
+    private void DisposeRetired()
+    {
+        foreach (var picture in _retired.Where(p => !ReferenceEquals(p, _stagePicture)).ToList())
+        {
+            _retired.Remove(picture);
+            picture.Dispose();
+        }
+    }
+
+    /// <summary>Each tile's small picture, fetched once per URL for as long as the window is open.</summary>
+    private async Task LoadTilePictureAsync(ShopOfferView offer)
+    {
+        if (offer.Offer.Preview is not { } preview) return;
+        if (!_tilePictures.TryGetValue(preview.Url, out var load))
+            _tilePictures[preview.Url] = load = _previews.LoadAsync(preview, TileFrameWidth, _closed.Token);
+        var picture = await load;
+        // Closed meanwhile: Dispose only got the loads that had finished.
+        if (_closed.IsCancellationRequested)
+        {
+            picture?.Dispose();
+            return;
+        }
+        offer.Picture = picture;
+        if (ReferenceEquals(offer, _selectedOffer) && _isStageLoading && _stagePicture is null) StagePicture = picture;
+    }
+
     public async Task ConfirmBuyAsync()
     {
         var offer = _pendingOffer;
@@ -254,6 +398,7 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
 
         _allOffers.Clear();
         _allOffers.AddRange(listing.Offers.Select(o => new ShopOfferView(o)));
+        foreach (var offer in _allOffers) _ = LoadTilePictureAsync(offer);
 
         Categories.Clear();
         var keys = _allOffers.Select(o => o.Offer.Category).Distinct().OrderBy(ShopCategoryView.Order).ThenBy(k => k, StringComparer.Ordinal).ToList();
@@ -289,6 +434,9 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
         foreach (var offer in _allOffers.Where(o => key == ShopCategoryView.AllKey || o.Offer.Category == key))
             Offers.Add(offer);
         OnPropertyChanged(nameof(HasNoOffers));
+        // The stage shows something of this tab: the offer it showed if that's here (after a refresh
+        // it's a new tile for the same offer, and its picture stays up), else the first tile.
+        SelectedOffer = Offers.FirstOrDefault(o => o.Offer.Id == _selectedOffer?.Offer.Id) ?? Offers.FirstOrDefault();
     }
 
     private void UpdateOfferStates()
@@ -321,6 +469,16 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
         if (_closed.IsCancellationRequested) return;
         _closed.Cancel();
         _closed.Dispose();
+        // The window is gone with everything that drew them.
+        _stageLoad?.Dispose();
+        _stageLoad = null;
+        foreach (var (_, picture) in _stagePictures) picture.Dispose();
+        foreach (var picture in _retired) picture.Dispose();
+        foreach (var load in _tilePictures.Values)
+            if (load.IsCompletedSuccessfully) load.Result?.Dispose();
+        _stagePictures.Clear();
+        _retired.Clear();
+        _tilePictures.Clear();
     }
 }
 
@@ -365,6 +523,8 @@ public sealed class ShopOfferView : ViewModelBase
     private string _stateText = "";
     private bool _canBuy;
     private bool _isOwned;
+    private bool _isSelected;
+    private Bitmap? _picture;
 
     public ShopOfferView(ShopOffer offer)
     {
@@ -382,7 +542,12 @@ public sealed class ShopOfferView : ViewModelBase
     public string PriceText => Offer.Price.ToString("N0", CultureInfo.CurrentCulture) + (Offer.Price == 1 ? " coin" : " coins");
     public string PriceNumber => Offer.Price.ToString("N0", CultureInfo.CurrentCulture);
     public string CategoryTitle => ShopCategoryView.TitleOf(Offer.Category);
-    // Which drawn placeholder the card shows (ShopWindow.axaml); offers carry no icon the launcher could show.
+    /// <summary>The tile's turntable picture, small, once it's here; until then (or without one) the drawn icon.</summary>
+    public Bitmap? Picture { get => _picture; set { if (SetProperty(ref _picture, value)) OnPropertyChanged(nameof(ShowIcon)); } }
+    public int PictureFrames => Offer.Preview?.Frames ?? 1;
+    public bool ShowIcon => _picture is null;
+    public bool IsSelected { get => _isSelected; set => SetProperty(ref _isSelected, value); }
+    // Which drawn icon the tile shows (ShopWindow.axaml) when there's no picture.
     public bool IsMount => Offer.Category == "mount";
     public bool IsPet => Offer.Category == "pet";
     public bool IsService => Offer.Category == "service";
