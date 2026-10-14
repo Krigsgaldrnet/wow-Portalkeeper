@@ -689,6 +689,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         while (await timer.WaitForNextTickAsync())
         {
             await RefreshRealmHealthAsync();
+            // A shop that couldn't be asked at login (the world server restarting) is asked again
+            // once the world is back, every few minutes; once the portal has answered, never.
+            if (_realmHealthState is RealmHealthState.Online or RealmHealthState.WorldOnly)
+                _ = ProbeShopAsync(retry: true);
         }
     }
 
@@ -874,6 +878,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(NewsAvailable));
         OnPropertyChanged(nameof(ArmoryAvailable));
         OnPropertyChanged(nameof(CombatLogSharingOffered));
+        OnPropertyChanged(nameof(ShopAvailable));
         OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
         UpdateLaunchReadinessStatus();
         NotifyHome();

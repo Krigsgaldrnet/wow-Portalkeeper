@@ -167,6 +167,8 @@
                     <Button Classes="link" Content="WEBSITE" Click="Website_Click" />
                     <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" IsVisible="{Binding ArmoryAvailable}" />
                     <Button Classes="link" Content="ARMORY" Click="Armory_Click" IsVisible="{Binding ArmoryAvailable}" />
+                    <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" IsVisible="{Binding ShopAvailable}" />
+                    <Button Classes="link" Content="SHOP" Click="Shop_Click" IsVisible="{Binding ShopAvailable}" />
                     <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" />
                     <Button Classes="link" Content="PATCH NOTES" Click="PatchNotes_Click" />
                 </StackPanel>

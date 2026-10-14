@@ -173,6 +173,21 @@ public partial class MainWindow : Window
         finally { viewModel.PropertyChanged -= preferenceChanged; }
     }
 
+    private async void Shop_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel || viewModel.CreateShop() is not { } shop)
+            return;
+
+        var window = new ShopWindow { DataContext = shop };
+        shop.LoginExpired += message =>
+        {
+            window.Close();
+            _ = viewModel.ShopLoginExpiredAsync(message);
+        };
+        try { await window.ShowDialog(this); }
+        finally { viewModel.ShopClosed(shop); }
+    }
+
     private async void News_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainViewModel viewModel)

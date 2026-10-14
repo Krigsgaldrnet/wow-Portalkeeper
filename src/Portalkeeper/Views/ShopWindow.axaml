@@ -1,0 +1,360 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Portalkeeper.ViewModels"
+        x:Class="Portalkeeper.Views.ShopWindow"
+        x:DataType="vm:ShopViewModel"
+        Title="Shop"
+        Width="1040" Height="720"
+        MinWidth="760" MinHeight="560"
+        WindowStartupLocation="CenterOwner"
+        RequestedThemeVariant="Dark"
+        Background="#071019">
+
+    <!-- Evermore fork: the coin shop. Tarnished Undermine Reals from the account's wallet buy mounts,
+         companions and character services for one character at a time. -->
+    <Window.Resources>
+        <!-- The coin (INV_Misc_Coin_19 in game), drawn: copper with a raised rim. -->
+        <DrawingImage x:Key="CoinImage">
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="12,12" RadiusX="11.5" RadiusY="11.5" />
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Brush>
+                        <RadialGradientBrush Center="38%,32%" GradientOrigin="38%,32%" RadiusX="75%" RadiusY="75%">
+                            <GradientStop Offset="0" Color="#FFD3A0" />
+                            <GradientStop Offset="0.45" Color="#C9773E" />
+                            <GradientStop Offset="1" Color="#6B3214" />
+                        </RadialGradientBrush>
+                    </GeometryDrawing.Brush>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#4A220C" Thickness="1" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="12,12" RadiusX="8" RadiusY="8" />
+                    </GeometryDrawing.Geometry>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#80FFE2BC" Thickness="1.2" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#AA5A2810" Geometry="M 12,7.2 L 13.3,10.7 L 16.8,12 L 13.3,13.3 L 12,16.8 L 10.7,13.3 L 7.2,12 L 10.7,10.7 Z" />
+            </DrawingGroup>
+        </DrawingImage>
+    </Window.Resources>
+
+    <Window.Styles>
+        <Style Selector="Button">
+            <Setter Property="Background" Value="#CC0B141E" />
+            <Setter Property="Foreground" Value="#F6D477" />
+            <Setter Property="BorderBrush" Value="#9A6B1E" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#1B2A38" />
+            <Setter Property="BorderBrush" Value="#D2A43A" />
+            <Setter Property="Foreground" Value="#FFE9A8" />
+        </Style>
+        <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#990D1218" />
+            <Setter Property="Foreground" Value="#75694E" />
+            <Setter Property="BorderBrush" Value="#4E432C" />
+        </Style>
+
+        <Style Selector="Button.gold">
+            <Setter Property="Background">
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0" Color="#F6D17A" />
+                    <GradientStop Offset="0.55" Color="#D9A53E" />
+                    <GradientStop Offset="1" Color="#B07C22" />
+                </LinearGradientBrush>
+            </Setter>
+            <Setter Property="BorderBrush" Value="#FFE6A3" />
+            <Setter Property="Foreground" Value="#2A1A05" />
+        </Style>
+        <Style Selector="Button.gold:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background">
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0" Color="#FFE29A" />
+                    <GradientStop Offset="0.55" Color="#E8B650" />
+                    <GradientStop Offset="1" Color="#C08A2C" />
+                </LinearGradientBrush>
+            </Setter>
+            <Setter Property="BorderBrush" Value="#FFF2C8" />
+            <Setter Property="Foreground" Value="#2A1A05" />
+        </Style>
+        <Style Selector="Button.gold:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#2A2418" />
+            <Setter Property="BorderBrush" Value="#4E432C" />
+            <Setter Property="Foreground" Value="#75694E" />
+        </Style>
+
+        <!-- Category tabs -->
+        <Style Selector="Button.tab">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Foreground" Value="#AFA28D" />
+            <Setter Property="FontFamily" Value="avares://Portalkeeper/Assets/Fonts#Cinzel" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="Button.tab:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="#66E8B64C" />
+            <Setter Property="Foreground" Value="#FFE9A8" />
+        </Style>
+        <Style Selector="Button.tab.selected">
+            <Setter Property="BorderBrush" Value="#E8B64C" />
+            <Setter Property="Foreground" Value="#F6D477" />
+        </Style>
+        <Style Selector="Button.tab.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="BorderBrush" Value="#E8B64C" />
+        </Style>
+        <!-- Behind the confirm step the tabs stay tabs, only dimmer. -->
+        <Style Selector="Button.tab:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="#75694E" />
+        </Style>
+        <Style Selector="Button.tab.selected:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="BorderBrush" Value="#9A6B1E" />
+        </Style>
+
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="#0A141D" />
+            <Setter Property="Foreground" Value="#E9DFC9" />
+            <Setter Property="BorderBrush" Value="#765522" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,6" />
+        </Style>
+
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#0D1822" />
+            <Setter Property="BorderBrush" Value="#4D3B20" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+        <Style Selector="Border.card:pointerover">
+            <Setter Property="BorderBrush" Value="#9A6B1E" />
+        </Style>
+
+        <Style Selector="TextBlock.serif">
+            <Setter Property="FontFamily" Value="avares://Portalkeeper/Assets/Fonts#Cinzel" />
+        </Style>
+    </Window.Styles>
+
+    <Grid>
+        <Grid RowDefinitions="Auto,Auto,*,Auto" IsEnabled="{Binding !IsConfirming}">
+
+            <!-- Header: title and wallet -->
+            <Border Grid.Row="0" BorderBrush="#9A6D25" BorderThickness="0,0,0,2" Padding="30,18">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                        <GradientStop Offset="0" Color="#13283A" />
+                        <GradientStop Offset="0.6" Color="#0A141D" />
+                        <GradientStop Offset="1" Color="#1E1408" />
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="18">
+                    <StackPanel VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Classes="serif" Text="SHOP" FontSize="32" FontWeight="Bold" LetterSpacing="2">
+                            <TextBlock.Foreground>
+                                <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                                    <GradientStop Offset="0" Color="#FFF4CC" />
+                                    <GradientStop Offset="0.5" Color="#E8B64C" />
+                                    <GradientStop Offset="1" Color="#9C6B1E" />
+                                </LinearGradientBrush>
+                            </TextBlock.Foreground>
+                        </TextBlock>
+                        <TextBlock Text="Spend the coins your bosses dropped. Bring coins to Pix Xizzix to add them to your wallet."
+                                   FontSize="12" Foreground="#AFA28D" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <Border Grid.Column="1" IsVisible="{Binding HasBalance}"
+                            Background="#B30A121B" BorderBrush="#66E8B64C" BorderThickness="1" CornerRadius="8" Padding="14,8"
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Your account's wallet. Every character on the account spends from it.">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Image Source="{StaticResource CoinImage}" Width="34" Height="34" VerticalAlignment="Center" />
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{Binding BalanceText}" FontSize="24" FontWeight="Bold" Foreground="#F6D477" />
+                                <TextBlock Text="{Binding BalanceCaption}" FontSize="11" Foreground="#AFA28D" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Button Grid.Column="2" Content="REFRESH" Click="Refresh_Click" IsEnabled="{Binding CanRefresh}"
+                            VerticalAlignment="Center" Padding="14,8" />
+                </Grid>
+            </Border>
+
+            <!-- Categories and the character it's for -->
+            <Grid Grid.Row="1" Margin="22,10,24,0" ColumnDefinitions="*,Auto" ColumnSpacing="16" IsVisible="{Binding ShowShop}">
+                <!-- Wraps to a second line in a narrow window or with many categories. -->
+                <ItemsControl ItemsSource="{Binding Categories}" VerticalAlignment="Bottom">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" ItemSpacing="4" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ShopCategoryView">
+                            <Button Classes="tab" Classes.selected="{Binding IsSelected}" Click="Category_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="{Binding Title}" />
+                                    <TextBlock Text="{Binding Count}" Foreground="#75694E" FontSize="11" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center"
+                            IsVisible="{Binding HasCharacters}">
+                    <TextBlock Text="Buying for" Foreground="#AFA28D" VerticalAlignment="Center" />
+                    <ComboBox ItemsSource="{Binding Characters}" SelectedItem="{Binding SelectedCharacter}"
+                              MinWidth="260" IsEnabled="{Binding !IsBuying}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ShopCharacterView">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Name}" Foreground="{Binding ClassBrush}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding Detail}" Foreground="#AFA28D" FontSize="11" />
+                                    </StackPanel>
+                                    <Ellipse Grid.Column="1" Width="8" Height="8" Fill="#5CD65C" VerticalAlignment="Center"
+                                             IsVisible="{Binding Online}" ToolTip.Tip="In the game now" />
+                                </Grid>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+            </Grid>
+
+            <!-- Offers -->
+            <Grid Grid.Row="2" Margin="0,8,0,0">
+                <ScrollViewer IsVisible="{Binding ShowShop}" HorizontalScrollBarVisibility="Disabled" Padding="22,6,22,16">
+                    <StackPanel Spacing="10">
+                        <Border IsVisible="{Binding HasNoCharacters}" Classes="card" Padding="16,12" Margin="2,0">
+                            <TextBlock Text="This account has no characters yet. Make one in the game, then come back to buy something for it."
+                                       Foreground="#D8CCBA" TextWrapping="Wrap" />
+                        </Border>
+                        <TextBlock IsVisible="{Binding HasNoOffers}" Text="Nothing is for sale right now."
+                                   Foreground="#AFA28D" Margin="4,10" />
+                        <ItemsControl ItemsSource="{Binding Offers}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" ItemSpacing="12" LineSpacing="12" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ShopOfferView">
+                                    <Border Classes="card" Width="315" Height="170" Padding="14,12">
+                                        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                                <!-- Placeholder icon per category -->
+                                                <Border Width="48" Height="48" CornerRadius="6" BorderThickness="1"
+                                                        BorderBrush="{Binding AccentBrush}" Background="#14202B">
+                                                    <Panel Width="28" Height="28" Opacity="0.9">
+                                                        <!-- Horseshoe -->
+                                                        <Path IsVisible="{Binding IsMount}" Fill="{Binding AccentBrush}" Stretch="Uniform"
+                                                              Data="F0 M 3.5,3 L 9,3 L 9.5,12 A 2.5,2.5 0 0 0 14.5,12 L 15,3 L 20.5,3 L 19,12 A 7,7 0 0 1 5,12 Z M 7.3,6 A 0.9,0.9 0 1 0 5.5,6 A 0.9,0.9 0 1 0 7.3,6 Z M 7.7,10 A 0.9,0.9 0 1 0 5.9,10 A 0.9,0.9 0 1 0 7.7,10 Z M 18.5,6 A 0.9,0.9 0 1 0 16.7,6 A 0.9,0.9 0 1 0 18.5,6 Z M 18.1,10 A 0.9,0.9 0 1 0 16.3,10 A 0.9,0.9 0 1 0 18.1,10 Z" />
+                                                        <!-- Paw -->
+                                                        <Path IsVisible="{Binding IsPet}" Fill="{Binding AccentBrush}" Stretch="Uniform"
+                                                              Data="M 12,12.5 C 8,12.5 5.5,16.5 6.5,19 C 7.5,21.5 10,20.5 12,20.5 C 14,20.5 16.5,21.5 17.5,19 C 18.5,16.5 16,12.5 12,12.5 Z M 5,8.5 A 2,2.5 0 1 0 5,13.5 A 2,2.5 0 1 0 5,8.5 Z M 19,8.5 A 2,2.5 0 1 0 19,13.5 A 2,2.5 0 1 0 19,8.5 Z M 9,3.5 A 2,2.5 0 1 0 9,8.5 A 2,2.5 0 1 0 9,3.5 Z M 15,3.5 A 2,2.5 0 1 0 15,8.5 A 2,2.5 0 1 0 15,3.5 Z" />
+                                                        <!-- Sparkle -->
+                                                        <Path IsVisible="{Binding IsService}" Fill="{Binding AccentBrush}" Stretch="Uniform"
+                                                              Data="M 12,2 L 14.2,9.8 L 22,12 L 14.2,14.2 L 12,22 L 9.8,14.2 L 2,12 L 9.8,9.8 Z" />
+                                                        <!-- Gem -->
+                                                        <Path IsVisible="{Binding IsOther}" Fill="{Binding AccentBrush}" Stretch="Uniform"
+                                                              Data="M 12,3 L 20,10 L 12,21 L 4,10 Z" />
+                                                    </Panel>
+                                                </Border>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                                    <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" Foreground="#F3D58C"
+                                                               TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                                                    <TextBlock Classes="serif" Text="{Binding CategoryTitle}" FontSize="10" Foreground="{Binding AccentBrush}" />
+                                                </StackPanel>
+                                                <Border Grid.Column="2" IsVisible="{Binding IsOwned}" VerticalAlignment="Top"
+                                                        Background="#2A5CD65C" BorderBrush="#5CD65C" BorderThickness="1" CornerRadius="4" Padding="6,1">
+                                                    <TextBlock Text="✓" FontSize="11" FontWeight="Bold" Foreground="#8EE68E" />
+                                                </Border>
+                                            </Grid>
+                                            <TextBlock Grid.Row="1" Text="{Binding Description}" FontSize="12" Foreground="#AFA28D"
+                                                       TextWrapping="Wrap" TextTrimming="WordEllipsis" ToolTip.Tip="{Binding Description}" />
+                                            <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                    <Image Source="{StaticResource CoinImage}" Width="18" Height="18" />
+                                                    <TextBlock Text="{Binding PriceNumber}" FontSize="16" FontWeight="Bold" Foreground="#F6D477" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Text="{Binding StateText}" IsVisible="{Binding HasState}"
+                                                           Foreground="#C9A27A" FontSize="12" VerticalAlignment="Center"
+                                                           HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" />
+                                                <Button Grid.Column="2" Classes="gold" Content="BUY" Click="Buy_Click"
+                                                        IsEnabled="{Binding CanBuy}" Padding="18,6" />
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- First load -->
+                <StackPanel IsVisible="{Binding ShowFirstLoad}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Width="260">
+                    <TextBlock Text="Opening the shop..." Foreground="#D8CCBA" HorizontalAlignment="Center" />
+                    <ProgressBar IsIndeterminate="True" Height="3" Foreground="#E8B64C" Background="#26FFFFFF" />
+                </StackPanel>
+
+                <!-- No listing -->
+                <Border IsVisible="{Binding HasLoadError}" Classes="card" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        MaxWidth="520" Padding="24,20">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="The shop isn't available" Classes="serif" FontSize="18" FontWeight="Bold" Foreground="#F3D58C"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="{Binding LoadError}" Foreground="#D8CCBA" TextWrapping="Wrap" TextAlignment="Center" />
+                        <Button Content="TRY AGAIN" Click="Refresh_Click" IsEnabled="{Binding CanRefresh}" HorizontalAlignment="Center" Padding="16,8" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Status line: what the last purchase did -->
+            <Border Grid.Row="3" Background="#0A121B" BorderBrush="#33FFFFFF" BorderThickness="0,1,0,0" Padding="24,10"
+                    IsVisible="{Binding HasStatus}">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                    <ProgressBar Width="60" Height="3" IsIndeterminate="True" Foreground="#E8B64C" Background="#26FFFFFF"
+                                 VerticalAlignment="Center" IsVisible="{Binding IsBuying}" />
+                    <Grid Grid.Column="1">
+                        <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" Foreground="#8EE68E" IsVisible="{Binding !StatusIsError}" />
+                        <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" Foreground="#E58A73" IsVisible="{Binding StatusIsError}" />
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Confirm step -->
+        <Grid Background="#B3040709" IsVisible="{Binding IsConfirming}">
+            <Border Width="460" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="#F20A121B" BorderBrush="#9A6B1E" BorderThickness="1" CornerRadius="10" Padding="26,22">
+                <StackPanel Spacing="14">
+                    <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+                        <Image Source="{StaticResource CoinImage}" Width="26" Height="26" />
+                        <TextBlock Classes="serif" Text="CONFIRM PURCHASE" FontSize="18" FontWeight="Bold" Foreground="#F3D58C" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding ConfirmText}" FontSize="15" Foreground="#F6EBD2" TextWrapping="Wrap" TextAlignment="Center" />
+                    <TextBlock Text="{Binding ConfirmDetail}" FontSize="12" Foreground="#AFA28D" TextWrapping="Wrap" TextAlignment="Center" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,6,0,0">
+                        <Button x:Name="CancelBuyButton" Content="CANCEL" Click="CancelBuy_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="12,9" />
+                        <Button Grid.Column="1" Classes="gold" Content="BUY" Click="ConfirmBuy_Click"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="12,9" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
