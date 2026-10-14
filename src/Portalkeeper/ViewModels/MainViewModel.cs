@@ -35,7 +35,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             throw new InvalidOperationException("Wait for the current operation and close World of Warcraft before modifying components.");
         _isManagingComponents = true;
         OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
-        try { await PrepareIsolatedRuntimeAsync(); await operation(); }
+        try { await StopOptionalAddonUpdatesAsync(); await PrepareIsolatedRuntimeAsync(); await operation(); }
         finally { _isManagingComponents = false; OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm)); UpdateLaunchReadinessStatus(); }
     }
     private RealmInfo? _realmInfo;
@@ -579,6 +579,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
         try
         {
+            await StopOptionalAddonUpdatesAsync();
             ApplyClientInfo(_clientService.ValidateClient(ClientPath, _realmInfo.Client));
             if (!await EnforceRealmClientAsync())
                 throw new InvalidOperationException(_clientCheckStatus.Length > 0 ? _clientCheckStatus : "World of Warcraft doesn't match the realm's client.");
@@ -698,6 +699,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     public void SetClientDirectory(string directoryPath)
     {
         if (_isManagingComponents || IsLaunching || IsGameRunning) return;
+        _optionalUpdateCancel?.Cancel(); // the rest of its updates were meant for the old client
         _clientCheck = ClientCheck.Unchecked;
         var client =
             _clientService.ValidateClient(directoryPath, _realmInfo?.Client);
@@ -770,6 +772,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
         try
         {
+            await StopOptionalAddonUpdatesAsync();
             await LoadRealmConfigurationAsync(selectedPath);
             await Task.WhenAll(RefreshRealmHealthAsync(), LoadAddonsAsync());
         }
@@ -988,7 +991,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 .Select(info => realmSourceErrors.TryGetValue(info.Definition.Id, out var error)
                     ? new AddonInfo { Definition = info.Definition, DirectoryPath = info.DirectoryPath,
                         IsInstalled = info.IsInstalled, InstalledVersion = info.InstalledVersion,
-                        InstalledSourceCommit = info.InstalledSourceCommit, DiscoveryError = error }
+                        InstalledSourceCommit = info.InstalledSourceCommit, InstalledByLauncher = info.InstalledByLauncher,
+                        DiscoveryError = error }
                     : info)
                 .Concat(personalSourceErrors)
                 .ToArray();

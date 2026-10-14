@@ -15,6 +15,10 @@ public sealed class AddonInfo
 
     public string InstalledSourceCommit { get; init; } = string.Empty;
 
+    // This launcher installed it (and it hasn't been uninstalled since), as opposed to a folder of the
+    // same name the player put there themselves.
+    public bool InstalledByLauncher { get; init; }
+
     public string DiscoveryError { get; init; } = string.Empty;
 
     public bool IsSourceError =>

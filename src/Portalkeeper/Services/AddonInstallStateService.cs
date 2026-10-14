@@ -66,6 +66,15 @@ public sealed class AddonInstallStateService
             JsonSerializer.Serialize(state, JsonOptions));
     }
 
+    public void Delete(
+        string clientDirectory,
+        string addonId)
+    {
+        var path = GetStatePath(clientDirectory, addonId);
+        if (File.Exists(path))
+            File.Delete(path);
+    }
+
     private static string GetStatePath(
         string clientDirectory,
         string addonId)

@@ -4,6 +4,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using Portalkeeper.Models;
@@ -17,9 +18,17 @@ public sealed class AddonInstallerService
     public AddonInstallerService(HttpClient? httpClient = null) => _httpClient = httpClient ?? DefaultHttpClient;
     private readonly AddonInstallStateService _installStateService = new();
 
+    // Update and uninstall backups kept per addon; older ones are deleted after each install.
+    private const int BackupsKeptPerAddon = 3;
+
+    /// <summary>
+    /// Downloads and installs the addon. Cancelling only stops the download and preparation: once the
+    /// installed folders start moving to a backup, the install runs to the end (or rolls back).
+    /// </summary>
     public async Task InstallOrUpdateAsync(
         string clientDirectory,
-        AddonDefinition addon)
+        AddonDefinition addon,
+        CancellationToken cancellationToken = default)
     {
         ValidateDefinition(addon);
         _ = ManagedPath.Resolve(clientDirectory, Path.Combine("Interface", "AddOns", addon.Folder));
@@ -49,11 +58,11 @@ public sealed class AddonInstallerService
                     addon.GitUrl,
                     addon.SourceCommit);
 
-                await DownloadAsync(archiveUrl, archivePath);
+                await DownloadAsync(archiveUrl, archivePath, cancellationToken);
             }
             else
             {
-                await DownloadAsync(addon.DownloadUrl, archivePath);
+                await DownloadAsync(addon.DownloadUrl, archivePath, cancellationToken);
                 if (addon.Sha256.Length > 0) VerifySha256(archivePath, addon.Sha256);
             }
 
@@ -128,6 +137,7 @@ public sealed class AddonInstallerService
             }
 
             var backupCreated = false;
+            cancellationToken.ThrowIfCancellationRequested();
 
             try
             {
@@ -209,6 +219,8 @@ public sealed class AddonInstallerService
 
                 throw;
             }
+
+            PruneBackups(clientDirectory, addon.Id);
         }
         finally
         {
@@ -256,6 +268,29 @@ public sealed class AddonInstallerService
             Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
             Directory.Move(destination, backup);
         }
+
+        // A folder put back by hand later isn't one this launcher installed.
+        _installStateService.Delete(clientDirectory, addon.Id);
+        PruneBackups(clientDirectory, addon.Id);
+    }
+
+    /// <summary>Keeps the newest few backup sets of an addon (.portalkeeper/backups/&lt;id&gt;/&lt;set&gt;) and deletes the rest.</summary>
+    private static void PruneBackups(string clientDirectory, string addonId)
+    {
+        try
+        {
+            var root = ManagedPath.Resolve(clientDirectory, Path.Combine(".portalkeeper", "backups", addonId));
+            if (!Directory.Exists(root)) return;
+            var stale = Directory.GetDirectories(root)
+                .OrderByDescending(Directory.GetCreationTimeUtc)
+                .Skip(BackupsKeptPerAddon);
+            foreach (var set in stale)
+            {
+                try { Directory.Delete(set, true); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
     private static void ValidateDefinition(AddonDefinition addon)
     {
@@ -309,7 +344,8 @@ public sealed class AddonInstallerService
 
     private async Task DownloadAsync(
         string location,
-        string destinationPath)
+        string destinationPath,
+        CancellationToken cancellationToken)
     {
         if (Uri.TryCreate(location, UriKind.Absolute, out var uri) &&
             (uri.Scheme == Uri.UriSchemeHttp ||
@@ -317,13 +353,14 @@ public sealed class AddonInstallerService
         {
             using var response = await _httpClient.GetAsync(
                 uri,
-                HttpCompletionOption.ResponseHeadersRead);
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
 
             response.EnsureSuccessStatusCode();
 
-            await using var source = await response.Content.ReadAsStreamAsync();
+            await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
             await using var destination = File.Create(destinationPath);
-            await source.CopyToAsync(destination);
+            await source.CopyToAsync(destination, cancellationToken);
             return;
         }
 
