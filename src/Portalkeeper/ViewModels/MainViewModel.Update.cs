@@ -76,7 +76,7 @@ public sealed partial class MainViewModel
     }
 
     private bool IsIdleForUpdate => !IsGameRunning && !IsLaunching && !_isInstallingClient && !_isInstallingRequired
-        && !_isManagingComponents && !_isRefreshingConfiguration && !_isLoggingIn;
+        && !_isManagingComponents && !_isRefreshingConfiguration && !_isLoggingIn && !IsUpdatingOptionalAddons;
 
     /// <summary>Starts the update now if nothing is going on. Returns false when it has to wait.</summary>
     public bool TryApplySelfUpdate(bool manual = false)

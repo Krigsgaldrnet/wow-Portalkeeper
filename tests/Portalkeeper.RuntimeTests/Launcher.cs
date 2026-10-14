@@ -287,6 +287,9 @@ internal static partial class Program
 
             // Combat logs shared with the realm: the launcher's own addon and the upload.
             await CombatLogChecks(root, Check);
+
+            // Installed optional addons updated in the background.
+            await AddonUpdateChecks(root, Check);
         }
         catch (Exception ex)
         {

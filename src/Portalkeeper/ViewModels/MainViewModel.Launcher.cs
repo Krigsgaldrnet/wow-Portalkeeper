@@ -368,18 +368,12 @@ public sealed partial class MainViewModel
     private static bool InstallsAutomatically(PatchInfo patch) =>
         patch.Definition.Requirement is ComponentRequirement.Required or ComponentRequirement.Recommended;
 
-    // An optional addon the player installed is kept current like a required one until they uninstall
-    // it. Personal addons (added by the player from GitHub) stay manual.
-    private static bool UpdatesAutomatically(AddonInfo addon) =>
-        !addon.Definition.Required && !addon.Definition.IsPersonal && addon.IsInstalled && addon.CanInstallOrUpdate;
-
     private bool NeedsRequiredSync => IsLoggedIn && ClientValid && _clientCheck == ClientCheck.Ok && RealmConfigured && !IsIsolatedRealm && AddonsLoaded
-        && (Patches.Any(p => InstallsAutomatically(p) && !p.IsValid) || !AddonsReady || _addons.Any(UpdatesAutomatically));
+        && (Patches.Any(p => InstallsAutomatically(p) && !p.IsValid) || !AddonsReady);
 
     /// <summary>
     /// Installs or updates every Required and Recommended patch and every Required addon the realm
-    /// lists, without asking: players only ever see the optional addons. Optional addons the player
-    /// installed are updated here too, but a failed one never holds up the rest. Runs after login, when the
+    /// lists, without asking: players only ever see the optional addons. Runs after login, when the
     /// client is set and whenever the realm configuration is refreshed (which is how a new patch
     /// version arrives).
     /// </summary>
@@ -411,14 +405,6 @@ public sealed partial class MainViewModel
             {
                 SetSyncStatus("Updating realm addons: " + addon.Name + "...");
                 await InstallOrUpdateAddonAsync(addon.Id);
-            }
-            var optional = _addons.Where(UpdatesAutomatically).Select(a => a.Definition).ToArray();
-            foreach (var addon in optional)
-            {
-                SetSyncStatus("Updating addons: " + addon.Name + "...");
-                // It stays "Update Available" in Manage Addons and is tried again on the next check.
-                try { await InstallOrUpdateAddonAsync(addon.Id); }
-                catch (Exception) { }
             }
             _syncStatus = "";
         }
@@ -462,6 +448,7 @@ public sealed partial class MainViewModel
             await SyncRequiredAsync();
             RecordInstalledPatches();
         }
+        StartOptionalAddonUpdates();
         await RefreshSharingAsync();
     }
 
@@ -751,20 +738,94 @@ public sealed partial class MainViewModel
             if (optional.Count == 0) return AddonsLoaded ? "No extra addons are offered for this realm." : _addonStatus;
             var installed = optional.Count(a => a.IsInstalled);
             var updates = optional.Count(a => a.IsInstalled && a.IsUpdateAvailable);
-            return $"{installed} of {optional.Count} addons installed" + (updates > 0 ? $" · {updates} update{(updates == 1 ? "" : "s")} available" : "") + ".";
+            var failed = optional.Where(a => a.IsUpdateAvailable && _optionalUpdateFailures.ContainsKey(a.Definition.Id))
+                .Select(a => _optionalUpdateFailures[a.Definition.Id]).ToArray();
+            return $"{installed} of {optional.Count} addons installed" + (updates > 0 ? $" · {updates} update{(updates == 1 ? "" : "s")} available" : "") + "."
+                + (failed.Length > 0 ? " Couldn't update " + string.Join("; ", failed) + "." : "");
         }
     }
 
-    /// <summary>
-    /// Updates the optional addons the player installed (never installs new ones). SyncRequiredAsync
-    /// does this by itself; the button is for doing it right now.
-    /// </summary>
+    // The UPDATE INSTALLED button: every installed optional addon with an update it can install.
+    private static bool CanUpdateInstalled(AddonInfo addon) =>
+        !addon.Definition.Required && addon.IsInstalled && addon.CanInstallOrUpdate;
+
+    /// <summary>Updates the optional addons the player installed (never installs new ones), right now.</summary>
     public Task UpdateInstalledAddonsAsync() => RunComponentOperationAsync(async () =>
     {
-        foreach (var addon in OptionalAddons.Where(a => a.IsInstalled && a.IsUpdateAvailable).Select(a => a.Definition).ToArray())
+        foreach (var addon in OptionalAddons.Where(CanUpdateInstalled).Select(a => a.Definition).ToArray())
+        {
             await _addonInstallerService.InstallOrUpdateAsync(EffectiveClientPath, addon);
+            _optionalUpdateFailures.Remove(addon.Id);
+        }
         await LoadAddonsAsync();
     });
+
+    // Once the player installs an optional addon, it's kept current in the background until they
+    // uninstall it. This never holds up ENTER REALM: launching, any other addon or patch change, a realm
+    // refresh or a new client folder stops it first (StopOptionalAddonUpdatesAsync).
+
+    // Each addon version is tried once per launcher run, so one that keeps failing (or still looks out
+    // of date after installing) isn't downloaded again at every check.
+    private readonly HashSet<string> _autoUpdateTried = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _optionalUpdateFailures = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationTokenSource? _optionalUpdateCancel;
+    private Task _optionalUpdateTask = Task.CompletedTask;
+    private bool IsUpdatingOptionalAddons => !_optionalUpdateTask.IsCompleted;
+
+    private static string AutoUpdateKey(AddonInfo addon) =>
+        addon.Definition.Id + "|" + addon.Definition.SourceCommit + "|" + addon.Definition.Version + "|" + addon.Definition.DownloadUrl;
+
+    // Realm addons (not personal ones) this launcher installed: a folder the player put there by hand
+    // is left alone. A GitHub addon goes by its commit, since a multi-folder addon's toc versions can
+    // disagree and the version alone would then ask for the same install again and again.
+    private bool UpdatesAutomatically(AddonInfo addon) =>
+        CanUpdateInstalled(addon) && !addon.Definition.IsPersonal && addon.InstalledByLauncher
+        && (addon.HasTrackedSourceCommit ? addon.SourceUpdateAvailable : addon.VersionUpdateAvailable)
+        && !_autoUpdateTried.Contains(AutoUpdateKey(addon));
+
+    private void StartOptionalAddonUpdates()
+    {
+        if (IsUpdatingOptionalAddons || !IsLoggedIn || !ClientValid || _clientCheck != ClientCheck.Ok || !RealmConfigured
+            || IsIsolatedRealm || !AddonsLoaded || _isInstallingRequired || _isInstallingClient || _isManagingComponents
+            || _isRefreshingConfiguration || IsLaunching || IsGameRunning)
+            return;
+        var due = _addons.Where(UpdatesAutomatically).ToArray();
+        if (due.Length == 0) return;
+        _optionalUpdateCancel = new CancellationTokenSource();
+        _optionalUpdateTask = UpdateOptionalAddonsAsync(due, EffectiveClientPath, _optionalUpdateCancel.Token);
+    }
+
+    private async Task UpdateOptionalAddonsAsync(AddonInfo[] due, string client, CancellationToken cancel)
+    {
+        var changed = false;
+        foreach (var addon in due)
+        {
+            if (cancel.IsCancellationRequested) break;
+            try
+            {
+                await _addonInstallerService.InstallOrUpdateAsync(client, addon.Definition, cancel);
+                _optionalUpdateFailures.Remove(addon.Definition.Id);
+                changed = true;
+            }
+            catch (OperationCanceledException) when (cancel.IsCancellationRequested) { break; }
+            catch (Exception ex)
+            {
+                // Shown in Manage Addons while the update is still missing.
+                _optionalUpdateFailures[addon.Definition.Id] = addon.Definition.Name + " (" + UserErrorService.Format(ex) + ")";
+            }
+            _autoUpdateTried.Add(AutoUpdateKey(addon));
+        }
+        // Whoever stopped it reloads the addons itself; a launch shouldn't wait for GitHub.
+        if (changed && !cancel.IsCancellationRequested) await LoadAddonsAsync();
+        else OnPropertyChanged(nameof(OptionalAddonStatus));
+    }
+
+    private async Task StopOptionalAddonUpdatesAsync()
+    {
+        _optionalUpdateCancel?.Cancel();
+        try { await _optionalUpdateTask; }
+        catch (Exception) { }
+    }
 
     // ---------------------------------------------------------
     // Patches over BitTorrent

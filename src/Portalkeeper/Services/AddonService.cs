@@ -45,7 +45,8 @@ public sealed class AddonService
                         : string.Empty,
                     InstalledSourceCommit = installed
                         ? state.SourceCommit
-                        : string.Empty
+                        : string.Empty,
+                    InstalledByLauncher = installed && state.UpdatedUtc != default
                 });
         }
 
