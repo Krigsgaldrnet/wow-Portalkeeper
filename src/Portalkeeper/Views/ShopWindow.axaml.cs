@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Data.Converters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Portalkeeper.ViewModels;
@@ -7,6 +8,10 @@ namespace Portalkeeper.Views;
 
 public partial class ShopWindow : Window
 {
+    /// <summary>The tile column's width for a window width: three tiles across in a wide window, two in a narrow one.</summary>
+    public static readonly IValueConverter TileColumnWidth = new FuncValueConverter<double, double>(width =>
+        (width >= 1060 ? 3 : 2) * (148 + 10) + 12);
+
     public ShopWindow()
     {
         InitializeComponent();
@@ -52,9 +57,15 @@ public partial class ShopWindow : Window
             vm.SelectedCategory = category;
     }
 
-    private void Buy_Click(object? sender, RoutedEventArgs e)
+    private void Tile_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is ShopViewModel vm && (sender as Control)?.DataContext is ShopOfferView offer)
+            vm.SelectedOffer = offer;
+    }
+
+    private void Buy_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is ShopViewModel { SelectedOffer: { } offer } vm)
             vm.AskToBuy(offer);
     }
 

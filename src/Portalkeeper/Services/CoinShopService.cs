@@ -17,8 +17,12 @@ public sealed record ShopCharacter(uint Guid, string Name, int Race, int Class, 
 
 /// <param name="Owned">Characters that have it already (or have the service waiting for their next login).</param>
 /// <param name="Cannot">Characters that can't use it (race, class, level, a skill it needs).</param>
+/// <param name="Preview">A picture of it that can be turned, when the realm has one.</param>
 public sealed record ShopOffer(uint Id, string Category, string Name, string Description, string Icon, int Price,
-    IReadOnlyList<uint> Owned, IReadOnlyList<uint> Cannot);
+    IReadOnlyList<uint> Owned, IReadOnlyList<uint> Cannot, ShopPreview? Preview = null);
+
+/// <summary>A turntable picture: <see cref="Frames"/> pictures side by side, one per angle as the model turns.</summary>
+public sealed record ShopPreview(Uri Url, int Frames);
 
 /// <summary>What the account can buy, its wallet, and its characters, as the portal answered.</summary>
 public sealed record ShopListing(int Balance, IReadOnlyList<ShopCharacter> Characters, IReadOnlyList<ShopOffer> Offers, DateTimeOffset CachedAt);
@@ -80,7 +84,7 @@ public sealed class CoinShopService
                 .Select(c => new ShopCharacter(c.Guid, c.Name ?? "", c.Race, c.Class, c.Gender, c.Level, c.Online)).ToArray(),
             (body.Offers ?? []).OfType<OfferBody>().Where(o => o.Id > 0)
                 .Select(o => new ShopOffer(o.Id, (o.Category ?? "").Trim().ToLowerInvariant(), o.Name ?? "", o.Description ?? "",
-                    o.Icon ?? "", Math.Max(0, o.Price), o.Owned ?? [], o.Cannot ?? [])).ToArray(),
+                    o.Icon ?? "", Math.Max(0, o.Price), o.Owned ?? [], o.Cannot ?? [], Preview(o.Preview))).ToArray(),
             body.CachedAt is > 0 and < 253402300799 ? DateTimeOffset.FromUnixTimeSeconds(body.CachedAt) : DateTimeOffset.UtcNow);
     }
 
@@ -153,6 +157,12 @@ public sealed class CoinShopService
         }
     }
 
+    /// <summary>The offer's picture, when the portal named one this can fetch (http or https, 1 to 360 frames).</summary>
+    private static ShopPreview? Preview(PreviewBody? body) =>
+        body is { Frames: >= 1 and <= 360 } && Uri.TryCreate(body.Url, UriKind.Absolute, out var url)
+        && (url.Scheme == Uri.UriSchemeHttps || url.Scheme == Uri.UriSchemeHttp)
+            ? new ShopPreview(url, body.Frames) : null;
+
     private HttpRequestMessage Authorized(HttpMethod method, string token)
     {
         var request = new HttpRequestMessage(method, new Uri(_api, Endpoint));
@@ -186,7 +196,11 @@ public sealed class CoinShopService
         [property: JsonPropertyName("icon")] string? Icon,
         [property: JsonPropertyName("price")] int Price,
         [property: JsonPropertyName("owned")] uint[]? Owned,
-        [property: JsonPropertyName("cannot")] uint[]? Cannot);
+        [property: JsonPropertyName("cannot")] uint[]? Cannot,
+        [property: JsonPropertyName("preview")] PreviewBody? Preview);
+    private sealed record PreviewBody(
+        [property: JsonPropertyName("url")] string? Url,
+        [property: JsonPropertyName("frames")] int Frames);
     private sealed record ListingBody(
         [property: JsonPropertyName("balance")] int Balance,
         [property: JsonPropertyName("characters")] CharacterBody?[]? Characters,
