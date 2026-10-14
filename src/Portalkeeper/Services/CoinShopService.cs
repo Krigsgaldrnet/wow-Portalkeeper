@@ -31,7 +31,7 @@ public enum ShopPurchaseOutcome
     Refused,
     /// <summary>The portal turned it away (429, 400, 503, ...) before asking the game server. Nothing was taken.</summary>
     NotTried,
-    /// <summary>The login is no longer good (401/403).</summary>
+    /// <summary>The login is no longer good (401). A 403 (a ban, or a proxy's page) is only reported.</summary>
     LoggedOut,
     /// <summary>No answer from the game server or the portal: it may or may not have gone through.</summary>
     Unknown,
@@ -76,9 +76,9 @@ public sealed class CoinShopService
             ?? throw new InvalidDataException("The shop sent an empty answer.");
         return new ShopListing(
             Math.Max(0, body.Balance),
-            (body.Characters ?? []).Where(c => c is not null && c.Guid > 0)
+            (body.Characters ?? []).OfType<CharacterBody>().Where(c => c.Guid > 0)
                 .Select(c => new ShopCharacter(c.Guid, c.Name ?? "", c.Race, c.Class, c.Gender, c.Level, c.Online)).ToArray(),
-            (body.Offers ?? []).Where(o => o is not null && o.Id > 0)
+            (body.Offers ?? []).OfType<OfferBody>().Where(o => o.Id > 0)
                 .Select(o => new ShopOffer(o.Id, (o.Category ?? "").Trim().ToLowerInvariant(), o.Name ?? "", o.Description ?? "",
                     o.Icon ?? "", Math.Max(0, o.Price), o.Owned ?? [], o.Cannot ?? [])).ToArray(),
             body.CachedAt is > 0 and < 253402300799 ? DateTimeOffset.FromUnixTimeSeconds(body.CachedAt) : DateTimeOffset.UtcNow);
@@ -132,7 +132,6 @@ public sealed class CoinShopService
                     return new ShopPurchaseResult(ShopPurchaseOutcome.Refused,
                         message.Length > 0 ? message : "The purchase was refused.", null, body?.Error);
                 case HttpStatusCode.Unauthorized:
-                case HttpStatusCode.Forbidden:
                     return new ShopPurchaseResult(ShopPurchaseOutcome.LoggedOut,
                         message.Length > 0 ? message : "Your login has expired. Log in again.");
                 case HttpStatusCode.TooManyRequests:

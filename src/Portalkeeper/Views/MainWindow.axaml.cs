@@ -184,7 +184,8 @@ public partial class MainWindow : Window
             window.Close();
             _ = viewModel.ShopLoginExpiredAsync(message);
         };
-        await window.ShowDialog(this);
+        try { await window.ShowDialog(this); }
+        finally { viewModel.ShopClosed(shop); }
     }
 
     private async void News_Click(object? sender, RoutedEventArgs e)

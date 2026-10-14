@@ -125,9 +125,11 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
         : $"Buy {_pendingOffer.Name} for {_pendingOffer.PriceText} for {_pendingCharacter.Name}?";
     public string ConfirmDetail => _pendingOffer is null ? ""
         : (_balance >= _pendingOffer.Price
-            ? $"You have {BalanceText}; {(_balance - _pendingOffer.Price).ToString("N0", CultureInfo.CurrentCulture)} will be left. "
-            : $"You have {BalanceText}, which isn't enough for this. ")
+            ? $"You have {BalanceText} {CoinWord(_balance)}; {(_balance - _pendingOffer.Price).ToString("N0", CultureInfo.CurrentCulture)} will be left. "
+            : $"You have {BalanceText} {CoinWord(_balance)}, which isn't enough for this. ")
           + _pendingOffer.Description;
+
+    private static string CoinWord(int count) => count == 1 ? "coin" : "coins";
 
     /// <summary>Asks the portal for the listing. A purchase's message stays up when <paramref name="keepStatus"/>.</summary>
     public async Task LoadAsync(bool keepStatus = false)
@@ -148,21 +150,21 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
             Apply(listing);
             LoadError = "";
         }
-        catch (LauncherApiException ex) when (ex.Status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        catch (LauncherApiException ex) when (ex.Status == HttpStatusCode.Unauthorized)
         {
             if (version != _loadVersion) return;
-            ShowLoadError(ex.Message);
+            ShowLoadError(ex.Message, keepStatus);
             LoginExpired?.Invoke(ex.Message);
         }
         catch (LauncherApiException ex)
         {
-            if (version == _loadVersion) ShowLoadError(ex.Message);
+            if (version == _loadVersion) ShowLoadError(ex.Message, keepStatus);
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or InvalidDataException
             or InvalidOperationException or NotSupportedException)
         {
             if (_closed.IsCancellationRequested || version != _loadVersion) return;
-            ShowLoadError(UserErrorService.Format(ex, "Couldn't reach the shop"));
+            ShowLoadError(UserErrorService.Format(ex, "Couldn't reach the shop"), keepStatus);
         }
         finally
         {
@@ -172,12 +174,15 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
 
     /// <summary>
     /// Shown where the listing would be when there's none yet; with a listing up it stays up (the
-    /// balance may be a little old) and the error shows in the status line.
+    /// balance may be a little old) and the error shows in the status line. After a purchase
+    /// (<paramref name="afterPurchase"/>) what the purchase did stays first: a "may have gone
+    /// through" must not be replaced by the refresh that followed it.
     /// </summary>
-    private void ShowLoadError(string message)
+    private void ShowLoadError(string message, bool afterPurchase)
     {
-        if (_hasListing) SetStatus(message, true);
-        else LoadError = message;
+        if (!_hasListing) LoadError = message;
+        else if (afterPurchase && HasStatus) SetStatus(_statusMessage + " The shop couldn't be refreshed: " + message, _statusIsError);
+        else SetStatus(message, true);
     }
 
     /// <summary>
@@ -189,6 +194,9 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
         if (IsBuying || !offer.CanBuy || _selectedCharacter is null) return;
         _pendingCharacter = _selectedCharacter;
         PendingOffer = offer;
+        // Asked again for the same offer with another character: the text has to follow.
+        OnPropertyChanged(nameof(ConfirmText));
+        OnPropertyChanged(nameof(ConfirmDetail));
     }
 
     public void CancelBuy() => PendingOffer = null;

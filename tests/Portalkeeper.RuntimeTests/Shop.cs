@@ -86,6 +86,8 @@ internal static partial class Program
         check("503: not tried", closedBuy is { Outcome: ShopPurchaseOutcome.NotTried, Message: "The shop is closed right now." });
         var (logout, _) = await Buy(401, """{"error":"Your login has expired. Log in again."}""");
         check("401: logged out", logout.Outcome == ShopPurchaseOutcome.LoggedOut);
+        var (forbidden, _) = await Buy(403, "<html>Forbidden</html>");
+        check("403 (a ban or a proxy's page) is reported, not taken for a logout", forbidden.Outcome == ShopPurchaseOutcome.NotTried);
         var (garbled, _) = await Buy(502, "<html>Bad Gateway</html>");
         check("a proxy's 502 page still counts as 'may have gone through'",
             garbled is { Outcome: ShopPurchaseOutcome.Unknown } && garbled.Message.Length > 0);
@@ -119,7 +121,7 @@ internal static partial class Program
             check("a category tab shows only its offers", shop.Offers.Count == 1 && shop.Offers[0].Offer.Id == 201);
 
             shop.AskToBuy(shop.Offers[0]);
-            check("the confirm step says what's left", shop.ConfirmDetail.StartsWith("You have 45; 5 will be left.", StringComparison.Ordinal));
+            check("the confirm step says what's left", shop.ConfirmDetail.StartsWith("You have 45 coins; 5 will be left.", StringComparison.Ordinal));
             check("BUY asks first", shop.IsConfirming && shop.ConfirmText == "Buy Great Red Panda for 40 coins for Alys?"
                 && portal.Buys == 0);
             shop.CancelBuy();
@@ -202,6 +204,46 @@ internal static partial class Program
             portal.ListingJson = """{"error":"The shop is closed."}""";
             await shop.LoadAsync();
             check("a failed refresh keeps the listing up and says why", shop.ShowShop && shop.StatusIsError && shop.StatusMessage == "The shop is closed.");
+        }
+
+        // Asking again for the same card with another character names the new one.
+        using (var shop = new ShopViewModel(Service(new FakeShopPortal()), session))
+        {
+            await shop.LoadAsync();
+            var pet = shop.Offers.First(o => o.Offer.Id == 101);
+            shop.SelectedCharacter = shop.Characters.First(c => c.Guid == 7);
+            shop.AskToBuy(pet);
+            shop.SelectedCharacter = shop.Characters.First(c => c.Guid == 9);
+            shop.AskToBuy(pet);
+            check("asking again with another character names that character", shop.ConfirmText == "Buy Red Panda for 10 coins for Bronn?");
+        }
+
+        // A purchase that may have gone through stays on screen when the refresh after it fails.
+        var flaky = new FakeShopPortal();
+        using (var shop = new ShopViewModel(Service(flaky), session))
+        {
+            await shop.LoadAsync();
+            flaky.BuyStatus = 502;
+            flaky.BuyJson = """{"error":"The game server didn't answer. Look at your balance before you try again: the purchase may have gone through."}""";
+            flaky.Status = 503;
+            flaky.ListingJson = """{"error":"The shop can't reach the game server right now. Try again in a minute."}""";
+            shop.AskToBuy(shop.Offers.First(o => o.Offer.Id == 101));
+            await shop.ConfirmBuyAsync();
+            check("a failed refresh after a 502 keeps the 'may have gone through' warning",
+                shop.StatusIsError && shop.StatusMessage.StartsWith("The game server didn't answer", StringComparison.Ordinal)
+                && shop.StatusMessage.Contains("couldn't be refreshed: The shop can't reach", StringComparison.Ordinal));
+
+            flaky.Status = 200;
+            flaky.ListingJson = ShopListingJson;
+            await shop.LoadAsync();
+            flaky.BuyStatus = 200;
+            flaky.BuyJson = """{"ok":true,"balance":35,"message":"Red Panda is in Bronn's mailbox."}""";
+            flaky.Status = 503;
+            flaky.ListingJson = """{"error":"The shop is closed."}""";
+            shop.AskToBuy(shop.Offers.First(o => o.Offer.Id == 101));
+            await shop.ConfirmBuyAsync();
+            check("a failed refresh after a purchase doesn't turn it into an error",
+                !shop.StatusIsError && shop.StatusMessage.StartsWith("Red Panda is in Bronn's mailbox.", StringComparison.Ordinal) && shop.Balance == 35);
         }
 
         using (var shop = new ShopViewModel(Service(new FakeShopPortal { Status = 503, ListingJson = """{"error":"The shop is closed."}""" }), session))

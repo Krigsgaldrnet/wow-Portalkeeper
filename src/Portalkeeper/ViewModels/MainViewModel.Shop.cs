@@ -45,7 +45,7 @@ public sealed partial class MainViewModel
             _shopOffered = listing is not null;
             _shopKnown = true;
         }
-        catch (LauncherApiException ex) when (ex.Status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        catch (LauncherApiException ex) when (ex.Status == HttpStatusCode.Unauthorized)
         {
             // Login trouble is the login's business (session.php at start-up); no link meanwhile.
             if (ReferenceEquals(session, _session)) _shopOffered = false;
@@ -70,11 +70,23 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(ShopAvailable));
     }
 
-    /// <summary>A Shop window's view model for the current login, or null when there's no shop to open.</summary>
-    public ShopViewModel? CreateShop() =>
-        _session is { } session && ShopAvailable ? new ShopViewModel(_coinShop, session) : null;
+    // The open Shop window's view model: a self-update waits while it's buying (MainViewModel.Update.cs).
+    private ShopViewModel? _openShop;
+    private bool IsShopBuying => _openShop?.IsBuying == true;
 
-    /// <summary>The shop said the login is no longer good: back to the login screen, with its message.</summary>
+    /// <summary>A Shop window's view model for the current login, or null when there's no shop to open.</summary>
+    public ShopViewModel? CreateShop()
+    {
+        if (_session is not { } session || !ShopAvailable) return null;
+        return _openShop = new ShopViewModel(_coinShop, session);
+    }
+
+    public void ShopClosed(ShopViewModel shop)
+    {
+        if (ReferenceEquals(_openShop, shop)) _openShop = null;
+    }
+
+    /// <summary>The shop said the login is no longer good (401): back to the login screen, with its message.</summary>
     public async Task ShopLoginExpiredAsync(string message)
     {
         if (_session is null) return;

@@ -115,6 +115,15 @@
         <Style Selector="Button.tab.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="BorderBrush" Value="#E8B64C" />
         </Style>
+        <!-- Behind the confirm step the tabs stay tabs, only dimmer. -->
+        <Style Selector="Button.tab:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="#75694E" />
+        </Style>
+        <Style Selector="Button.tab.selected:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="BorderBrush" Value="#9A6B1E" />
+        </Style>
 
         <Style Selector="ComboBox">
             <Setter Property="Background" Value="#0A141D" />
@@ -140,7 +149,7 @@
     </Window.Styles>
 
     <Grid>
-        <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <Grid RowDefinitions="Auto,Auto,*,Auto" IsEnabled="{Binding !IsConfirming}">
 
             <!-- Header: title and wallet -->
             <Border Grid.Row="0" BorderBrush="#9A6D25" BorderThickness="0,0,0,2" Padding="30,18">
@@ -185,11 +194,12 @@
             </Border>
 
             <!-- Categories and the character it's for -->
-            <Grid Grid.Row="1" Margin="22,10,24,0" ColumnDefinitions="*,Auto" IsVisible="{Binding ShowShop}">
+            <Grid Grid.Row="1" Margin="22,10,24,0" ColumnDefinitions="*,Auto" ColumnSpacing="16" IsVisible="{Binding ShowShop}">
+                <!-- Wraps to a second line in a narrow window or with many categories. -->
                 <ItemsControl ItemsSource="{Binding Categories}" VerticalAlignment="Bottom">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal" Spacing="4" />
+                            <WrapPanel Orientation="Horizontal" ItemSpacing="4" />
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
@@ -339,7 +349,7 @@
                     <TextBlock Text="{Binding ConfirmText}" FontSize="15" Foreground="#F6EBD2" TextWrapping="Wrap" TextAlignment="Center" />
                     <TextBlock Text="{Binding ConfirmDetail}" FontSize="12" Foreground="#AFA28D" TextWrapping="Wrap" TextAlignment="Center" />
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,6,0,0">
-                        <Button Content="CANCEL" Click="CancelBuy_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="12,9" />
+                        <Button x:Name="CancelBuyButton" Content="CANCEL" Click="CancelBuy_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="12,9" />
                         <Button Grid.Column="1" Classes="gold" Content="BUY" Click="ConfirmBuy_Click"
                                 HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="12,9" />
                     </Grid>

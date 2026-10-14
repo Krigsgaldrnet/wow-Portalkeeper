@@ -11,11 +11,24 @@ public partial class ShopWindow : Window
     {
         InitializeComponent();
         Opened += async (_, _) => { if (DataContext is ShopViewModel vm) await vm.LoadAsync(); };
-        // A purchase on its way keeps the window open: its answer (or "it may have gone through")
-        // is only shown here. A login that ran out closes it from code.
+        // A purchase on its way keeps the window open when the player closes it: its answer (or "it
+        // may have gone through") is only shown here. Quitting the app or the OS shutting down isn't
+        // held up, and a login that ran out closes it from code.
         Closing += (_, e) =>
         {
-            if (!e.IsProgrammatic && DataContext is ShopViewModel { IsBuying: true }) e.Cancel = true;
+            if (!e.IsProgrammatic && e.CloseReason == WindowCloseReason.WindowClosing
+                && DataContext is ShopViewModel { IsBuying: true })
+                e.Cancel = true;
+        };
+        DataContextChanged += (_, _) =>
+        {
+            if (DataContext is ShopViewModel vm)
+                vm.PropertyChanged += (_, e) =>
+                {
+                    // The confirm step takes the keyboard too: CANCEL first, nothing behind it.
+                    if (e.PropertyName == nameof(ShopViewModel.IsConfirming) && vm.IsConfirming)
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() => CancelBuyButton.Focus());
+                };
         };
         Closed += (_, _) => (DataContext as ShopViewModel)?.Dispose();
         KeyDown += (_, e) =>
