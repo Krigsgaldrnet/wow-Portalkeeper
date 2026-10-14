@@ -290,6 +290,9 @@ internal static partial class Program
 
             // Installed optional addons updated in the background.
             await AddonUpdateChecks(root, Check);
+
+            // The coin shop.
+            await ShopChecks(Check);
         }
         catch (Exception ex)
         {

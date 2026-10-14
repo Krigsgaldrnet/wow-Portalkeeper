@@ -1,0 +1,262 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using Portalkeeper.Services;
+using Portalkeeper.ViewModels;
+
+namespace Portalkeeper.RuntimeTests;
+
+// Vaultrona fork: the coin shop (CoinShopService, ShopViewModel) against a stand-in for the
+// portal's shop.php that answers what it's told to.
+internal static partial class Program
+{
+    private const string ShopListingJson = """
+        {"balance":45,
+         "characters":[{"guid":7,"name":"Alys","race":10,"class":2,"gender":1,"level":62,"online":false},
+                       {"guid":9,"name":"Bronn","race":3,"class":1,"gender":0,"level":12,"online":true}],
+         "offers":[{"id":1,"category":"service","name":"Character Rename","description":"A new name.","icon":"","price":20,"owned":[7],"cannot":[]},
+                   {"id":101,"category":"pet","name":"Red Panda","description":"A companion.","icon":"","price":10,"owned":[],"cannot":[]},
+                   {"id":201,"category":"mount","name":"Great Red Panda","description":"A mount.","icon":"","price":40,"owned":[],"cannot":[9]},
+                   {"id":301,"category":"Toy","name":"Odd Thing","description":"","icon":"","price":50,"owned":[],"cannot":[]}],
+         "cached_at":1760000000}
+        """;
+
+    private static async Task ShopChecks(Action<string, bool> check)
+    {
+        var api = new Uri("https://portal.test/api/launcher/");
+        var session = new LauncherSession(FakeShopPortal.Token, "ALICE", DateTimeOffset.UtcNow.AddDays(30));
+        CoinShopService Service(FakeShopPortal portal) => new(api, new HttpClient(portal));
+
+        // The listing.
+        var portal = new FakeShopPortal();
+        var listing = await Service(portal).GetListingAsync(session);
+        check("the shop listing is read: balance, characters, offers",
+            listing is { Balance: 45, Characters.Count: 2, Offers.Count: 4 }
+            && listing.Characters[1] is { Guid: 9, Name: "Bronn", Race: 3, Class: 1, Level: 12, Online: true }
+            && listing.Offers[2] is { Id: 201, Category: "mount", Price: 40 }
+            && listing.Offers[0].Owned.SequenceEqual([7u]) && listing.Offers[2].Cannot.SequenceEqual([9u])
+            && listing.CachedAt == DateTimeOffset.FromUnixTimeSeconds(1760000000));
+        check("the listing is asked for with the launcher login", portal.Authorized == 1 && portal.Unauthorized == 0);
+        check("an unknown category is kept, lower-cased", listing?.Offers[3].Category == "toy");
+
+        portal.ListingJson = """{"balance":3,"characters":null,"offers":[{"id":5,"price":2}]}""";
+        listing = await Service(portal).GetListingAsync(session);
+        check("missing fields in the listing don't break it",
+            listing is { Balance: 3, Characters.Count: 0, Offers.Count: 1 } && listing.Offers[0] is { Category: "", Name: "", Owned.Count: 0 });
+
+        portal.Status = 404;
+        check("404 means the realm has no shop", await Service(portal).GetListingAsync(session) is null);
+        portal.Status = 503;
+        portal.ListingJson = """{"error":"The shop can't reach the game server right now. Try again in a minute."}""";
+        LauncherApiException? closed = null;
+        try { await Service(portal).GetListingAsync(session); } catch (LauncherApiException ex) { closed = ex; }
+        check("503 is reported with the portal's message",
+            closed is { Status: HttpStatusCode.ServiceUnavailable } && closed.Message.StartsWith("The shop can't reach", StringComparison.Ordinal));
+        portal.Status = 200;
+        LauncherApiException? expired = null;
+        try { await Service(portal).GetListingAsync(session with { Token = "stale" }); } catch (LauncherApiException ex) { expired = ex; }
+        check("an expired login is reported as 401", expired?.Status == HttpStatusCode.Unauthorized);
+        portal.Offline = true;
+        check("an unreachable shop is reported, not taken for 'no shop'", await ThrowsAsync(() => Service(portal).GetListingAsync(session)));
+
+        // Buying: every answer the portal can give.
+        async Task<(ShopPurchaseResult Result, FakeShopPortal Portal)> Buy(int status, string json)
+        {
+            var shop = new FakeShopPortal { BuyStatus = status, BuyJson = json };
+            return (await Service(shop).BuyAsync(session, 201, 7), shop);
+        }
+        var (bought, buyPortal) = await Buy(200, """{"ok":true,"balance":5,"message":"Great Red Panda is in Alys's mailbox."}""");
+        check("a purchase posts the offer and character as JSON",
+            buyPortal.LastBuy is { } body && body.GetProperty("offer").GetUInt32() == 201 && body.GetProperty("character").GetUInt32() == 7
+            && buyPortal.LastBuyContentType == "application/json");
+        check("200: bought, with the new balance and the server's message",
+            bought is { Outcome: ShopPurchaseOutcome.Bought, Balance: 5, Message: "Great Red Panda is in Alys's mailbox." });
+        var (refused, _) = await Buy(409, """{"ok":false,"error":"balance","message":"You need 40 coins and have 12."}""");
+        check("409: refused, with the code and the server's message",
+            refused is { Outcome: ShopPurchaseOutcome.Refused, Code: "balance", Message: "You need 40 coins and have 12.", Balance: null });
+        var (owned, _) = await Buy(409, """{"ok":false,"error":"owned","message":"Alys has one already."}""");
+        check("409 owned keeps its message", owned is { Outcome: ShopPurchaseOutcome.Refused, Code: "owned", Message: "Alys has one already." });
+        var (busy, _) = await Buy(429, """{"error":"Your last purchase is still going through. Try again in a moment."}""");
+        check("429: not tried, with the portal's message",
+            busy is { Outcome: ShopPurchaseOutcome.NotTried } && busy.Message.StartsWith("Your last purchase", StringComparison.Ordinal));
+        var (lost, _) = await Buy(502, """{"error":"The game server didn't answer. Look at your balance before you try again: the purchase may have gone through."}""");
+        check("502: may have gone through, with the portal's message",
+            lost is { Outcome: ShopPurchaseOutcome.Unknown } && lost.Message.StartsWith("The game server didn't answer", StringComparison.Ordinal));
+        var (closedBuy, _) = await Buy(503, """{"error":"The shop is closed right now."}""");
+        check("503: not tried", closedBuy is { Outcome: ShopPurchaseOutcome.NotTried, Message: "The shop is closed right now." });
+        var (logout, _) = await Buy(401, """{"error":"Your login has expired. Log in again."}""");
+        check("401: logged out", logout.Outcome == ShopPurchaseOutcome.LoggedOut);
+        var (garbled, _) = await Buy(502, "<html>Bad Gateway</html>");
+        check("a proxy's 502 page still counts as 'may have gone through'",
+            garbled is { Outcome: ShopPurchaseOutcome.Unknown } && garbled.Message.Length > 0);
+        var (noBalance, _) = await Buy(200, """{"ok":true,"message":"Bought."}""");
+        check("a purchase answer without a balance doesn't claim 0", noBalance is { Outcome: ShopPurchaseOutcome.Bought, Balance: null });
+        var (odd, _) = await Buy(200, """{"balance":5}""");
+        check("a 200 without ok isn't taken for a purchase", odd.Outcome == ShopPurchaseOutcome.Unknown);
+        var offline = new FakeShopPortal { Offline = true };
+        check("no answer at all: may have gone through",
+            (await Service(offline).BuyAsync(session, 201, 7)).Outcome == ShopPurchaseOutcome.Unknown);
+        offline.OfflineError = HttpRequestError.ConnectionError;
+        check("no connection at all: nothing was sent",
+            (await Service(offline).BuyAsync(session, 201, 7)).Outcome == ShopPurchaseOutcome.NotTried);
+
+        // The Shop window's view model: owned / can't use per character, the balance, the confirm step.
+        portal = new FakeShopPortal();
+        using (var shop = new ShopViewModel(Service(portal), session))
+        {
+            await shop.LoadAsync();
+            ShopOfferView Card(uint id) => shop.Offers.First(o => o.Offer.Id == id);
+            check("the shop opens on the online character", shop.SelectedCharacter?.Name == "Bronn" && shop.Balance == 45);
+            check("categories: all, then mounts, companions, services, then the rest",
+                string.Join(",", shop.Categories.Select(c => c.Title)) == "ALL,MOUNTS,COMPANIONS,SERVICES,TOY" && shop.Offers.Count == 4);
+            check("an offer the character can't use can't be bought", Card(201) is { CanBuy: false, StateText: "Can't use" });
+            check("an offer the character can use and afford can be bought", Card(101) is { CanBuy: true, HasState: false });
+            check("an offer the wallet can't pay for can't be bought", Card(301) is { CanBuy: false, StateText: "Need 5 more" });
+            shop.SelectedCharacter = shop.Characters.First(c => c.Guid == 7);
+            check("a service waiting for this character is marked", Card(1) is { CanBuy: false, IsOwned: true, StateText: "Already waiting" });
+            check("what another character couldn't use, this one can", Card(201).CanBuy);
+            shop.SelectedCategory = shop.Categories.First(c => c.Key == "mount");
+            check("a category tab shows only its offers", shop.Offers.Count == 1 && shop.Offers[0].Offer.Id == 201);
+
+            shop.AskToBuy(shop.Offers[0]);
+            check("the confirm step says what's left", shop.ConfirmDetail.StartsWith("You have 45; 5 will be left.", StringComparison.Ordinal));
+            check("BUY asks first", shop.IsConfirming && shop.ConfirmText == "Buy Great Red Panda for 40 coins for Alys?"
+                && portal.Buys == 0);
+            shop.CancelBuy();
+            check("cancel buys nothing", !shop.IsConfirming && portal.Buys == 0);
+
+            // The character asked about is the one bought for, even if the picker moves meanwhile.
+            portal.BuyJson = """{"ok":true,"balance":45,"message":"Bought."}""";
+            shop.AskToBuy(shop.Offers[0]);
+            shop.SelectedCharacter = shop.Characters.First(c => c.Guid == 9);
+            await shop.ConfirmBuyAsync();
+            check("the purchase goes to the character the confirm step named",
+                portal.Buys == 1 && portal.LastBuy?.GetProperty("character").GetUInt32() == 7);
+            shop.SelectedCharacter = shop.Characters.First(c => c.Guid == 7);
+
+            // BUY while a listing is on its way still asks.
+            portal.HoldListing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reloading = shop.LoadAsync();
+            var wasLoading = shop.IsLoading;
+            shop.AskToBuy(shop.Offers[0]);
+            check("BUY works while the listing reloads", wasLoading && shop.IsConfirming);
+            shop.CancelBuy();
+            portal.HoldListing.SetResult();
+            await reloading;
+            portal.HoldListing = null;
+
+            portal.BuyJson = """{"ok":true,"balance":5,"message":"Great Red Panda is in Alys's mailbox."}""";
+            portal.ListingJson = ShopListingJson.Replace("\"balance\":45", "\"balance\":5")
+                .Replace("\"owned\":[],\"cannot\":[9]", "\"owned\":[7],\"cannot\":[9]");
+            var listingsBefore = portal.Listings;
+            shop.AskToBuy(shop.Offers[0]);
+            await shop.ConfirmBuyAsync();
+            check("a purchase shows the server's message and the new balance",
+                shop.StatusMessage == "Great Red Panda is in Alys's mailbox." && !shop.StatusIsError && shop.Balance == 5);
+            check("a purchase fetches the listing again, keeping character and tab",
+                portal.Listings == listingsBefore + 1 && shop.SelectedCharacter?.Guid == 7
+                && shop.SelectedCategory?.Key == "mount" && shop.Offers[0] is { IsOwned: true, CanBuy: false });
+
+            portal.ListingJson = ShopListingJson;
+            await shop.LoadAsync();
+            shop.SelectedCategory = shop.Categories.First(c => c.Key == "pet");
+            portal.BuyStatus = 409;
+            portal.BuyJson = """{"ok":false,"error":"balance","message":"You need 10 coins and have 5."}""";
+            portal.ListingJson = ShopListingJson.Replace("\"balance\":45", "\"balance\":2");
+            listingsBefore = portal.Listings;
+            shop.AskToBuy(shop.Offers[0]);
+            await shop.ConfirmBuyAsync();
+            check("a refusal shows the server's message and fetches the listing again",
+                shop.StatusMessage == "You need 10 coins and have 5." && shop.StatusIsError
+                && portal.Listings == listingsBefore + 1 && shop.Balance == 2);
+
+            portal.ListingJson = ShopListingJson;
+            await shop.LoadAsync();
+            check("a refresh clears the last purchase's message", !shop.HasStatus && shop.Balance == 45);
+            portal.BuyStatus = 429;
+            portal.BuyJson = """{"error":"Your last purchase is still going through. Try again in a moment."}""";
+            listingsBefore = portal.Listings;
+            shop.AskToBuy(shop.Offers[0]);
+            await shop.ConfirmBuyAsync();
+            check("429 shows the portal's message and doesn't ask again",
+                shop.StatusIsError && shop.StatusMessage.StartsWith("Your last purchase", StringComparison.Ordinal) && portal.Listings == listingsBefore);
+
+            portal.BuyStatus = 502;
+            portal.BuyJson = """{"error":"The game server didn't answer. Look at your balance before you try again: the purchase may have gone through."}""";
+            listingsBefore = portal.Listings;
+            shop.AskToBuy(shop.Offers[0]);
+            await shop.ConfirmBuyAsync();
+            check("502 shows the portal's message and fetches the listing again",
+                shop.StatusIsError && shop.StatusMessage.StartsWith("The game server didn't answer", StringComparison.Ordinal)
+                && portal.Listings == listingsBefore + 1);
+
+            portal.BuyStatus = 401;
+            portal.BuyJson = """{"error":"Your login has expired. Log in again."}""";
+            string? expiredMessage = null;
+            shop.LoginExpired += message => expiredMessage = message;
+            shop.AskToBuy(shop.Offers[0]);
+            await shop.ConfirmBuyAsync();
+            check("401 on a purchase sends the player back to the login", expiredMessage == "Your login has expired. Log in again.");
+
+            portal.Status = 503;
+            portal.ListingJson = """{"error":"The shop is closed."}""";
+            await shop.LoadAsync();
+            check("a failed refresh keeps the listing up and says why", shop.ShowShop && shop.StatusIsError && shop.StatusMessage == "The shop is closed.");
+        }
+
+        using (var shop = new ShopViewModel(Service(new FakeShopPortal { Status = 503, ListingJson = """{"error":"The shop is closed."}""" }), session))
+        {
+            await shop.LoadAsync();
+            check("a shop that can't open says why instead of a listing", shop.HasLoadError && !shop.ShowShop && shop.LoadError == "The shop is closed.");
+        }
+        using (var shop = new ShopViewModel(Service(new FakeShopPortal { ListingJson = """{"balance":0,"characters":[],"offers":[{"id":1,"category":"pet","price":1}]}""" }), session))
+        {
+            await shop.LoadAsync();
+            check("an account without characters is told so, and nothing can be bought",
+                shop.HasNoCharacters && shop.SelectedCharacter is null && shop.Offers.All(o => o is { CanBuy: false, StateText: "No character" }));
+            check("a single category needs no ALL tab", shop.Categories.Count == 1);
+        }
+    }
+
+    private sealed class FakeShopPortal : HttpMessageHandler
+    {
+        public const string Token = "shop-test-token";
+        public int Status = 200;
+        public string ListingJson = ShopListingJson;
+        public int BuyStatus = 200;
+        public string BuyJson = """{"ok":true,"balance":0,"message":"Bought."}""";
+        public bool Offline;
+        public HttpRequestError OfflineError = HttpRequestError.Unknown;
+        /// <summary>When set, a listing isn't answered until this completes.</summary>
+        public TaskCompletionSource? HoldListing;
+        public int Authorized, Unauthorized, Listings, Buys;
+        public JsonElement? LastBuy;
+        public string? LastBuyContentType;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Offline) throw new HttpRequestException(OfflineError, "No route to host.");
+            if (request.RequestUri!.AbsolutePath != "/api/launcher/shop.php") return Json(404, """{"error":"Not found."}""");
+            if (request.Headers.Authorization is not { Scheme: "Bearer", Parameter: Token })
+            {
+                Unauthorized++;
+                return Json(401, """{"error":"Your login has expired. Log in again."}""");
+            }
+            Authorized++;
+            if (request.Method == HttpMethod.Get)
+            {
+                if (HoldListing is { } hold) await hold.Task.WaitAsync(cancellationToken);
+                Listings++;
+                return Json(Status, Status == 404 ? """{"error":"This realm has no shop."}""" : ListingJson);
+            }
+            Buys++;
+            LastBuyContentType = request.Content?.Headers.ContentType?.MediaType;
+            LastBuy = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken)).RootElement.Clone();
+            return Json(BuyStatus, BuyJson);
+        }
+
+        private static HttpResponseMessage Json(int status, string json) =>
+            new((HttpStatusCode)status) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+    }
+}

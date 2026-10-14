@@ -144,6 +144,7 @@ public sealed partial class MainViewModel
         _patchTorrents.Clear();
         _sessionStore.Clear();
         ForgetCombatLogOffer();
+        ForgetShop();
         NotifyLoginChanged();
         await ConfigureSharingAsync();
         if (session is not null) await _accountService.LogoutAsync(session);
@@ -177,6 +178,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(AccountSummary));
         OnPropertyChanged(nameof(RememberedAccountName));
         OnPropertyChanged(nameof(CombatLogSharingOffered));
+        OnPropertyChanged(nameof(ShopAvailable));
         NotifyInstallChanged();
         UpdateLaunchReadinessStatus();
     }
@@ -430,6 +432,7 @@ public sealed partial class MainViewModel
     {
         // By itself: combat logs never wait for patches, and patches never wait for an upload.
         _ = StartCombatLogSharingAsync();
+        _ = ProbeShopAsync();
         await ClearCacheIfRealmAsksAsync();
         // The client has to load the realm's patch names before any patch is moved to one: with a
         // Wow.exe that can't be set up, the patches it has are the only ones it loads.
