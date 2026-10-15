@@ -292,9 +292,9 @@
                                                 Width="148" Height="184" ToolTip.Tip="{Binding Name}">
                                             <Grid RowDefinitions="*,Auto,Auto" RowSpacing="2">
                                                 <Panel Margin="2,4,2,0">
-                                                    <!-- The model, turning while the mouse is over it -->
+                                                    <!-- The model -->
                                                     <views:ShopTurntable Source="{Binding Picture}" Frames="{Binding PictureFrames}"
-                                                                         SpinOnHover="True" IsVisible="{Binding !ShowIcon}" />
+                                                                         IsVisible="{Binding !ShowIcon}" />
                                                     <!-- Or a drawn icon -->
                                                     <Border IsVisible="{Binding ShowIcon}" Width="64" Height="64" CornerRadius="32"
                                                             BorderThickness="1.5" BorderBrush="{Binding AccentBrush}" Background="#14202B">
@@ -347,7 +347,7 @@
                                     </RadialGradientBrush>
                                 </Ellipse.Fill>
                             </Ellipse>
-                            <views:ShopTurntable Grid.Row="0" Margin="16,16,16,0" Spin="True" Draggable="True"
+                            <views:ShopTurntable Grid.Row="0" Margin="16,16,16,0" Draggable="True"
                                                  Source="{Binding StagePicture}" Frames="{Binding StageFrames}"
                                                  IsVisible="{Binding HasStagePicture}" />
                             <TextBlock Grid.Row="0" Text="Drag to turn" FontSize="11" Foreground="#80AFA28D" Margin="0,12,16,0"
@@ -447,7 +447,7 @@
                         <Image Source="{StaticResource CoinImage}" Width="26" Height="26" />
                         <TextBlock Classes="serif" Text="CONFIRM PURCHASE" FontSize="18" FontWeight="Bold" Foreground="#F3D58C" VerticalAlignment="Center" />
                     </StackPanel>
-                    <views:ShopTurntable Height="150" Spin="True" Source="{Binding PendingOffer.Picture}" Frames="{Binding PendingOffer.PictureFrames}"
+                    <views:ShopTurntable Height="150" Source="{Binding PendingOffer.Picture}" Frames="{Binding PendingOffer.PictureFrames}"
                                          IsVisible="{Binding PendingOffer.Picture, Converter={x:Static ObjectConverters.IsNotNull}}" />
                     <TextBlock Text="{Binding ConfirmText}" FontSize="15" Foreground="#F6EBD2" TextWrapping="Wrap" TextAlignment="Center" />
                     <TextBlock Text="{Binding ConfirmDetail}" FontSize="12" Foreground="#AFA28D" TextWrapping="Wrap" TextAlignment="Center" />
