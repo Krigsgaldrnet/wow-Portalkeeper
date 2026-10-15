@@ -176,8 +176,10 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
     }
     public bool IsConfirming => _pendingOffer is not null;
     public string ConfirmText => _pendingOffer is null || _pendingCharacter is null ? ""
+        : _pendingOffer.IsFree ? $"Get {_pendingOffer.Name} for free for {_pendingCharacter.Name}?"
         : $"Buy {_pendingOffer.Name} for {_pendingOffer.PriceText} for {_pendingCharacter.Name}?";
     public string ConfirmDetail => _pendingOffer is null ? ""
+        : _pendingOffer.IsFree ? _pendingOffer.Description
         : (_balance >= _pendingOffer.Price
             ? $"You have {BalanceText} {CoinWord(_balance)}; {(_balance - _pendingOffer.Price).ToString("N0", CultureInfo.CurrentCulture)} will be left. "
             : $"You have {BalanceText} {CoinWord(_balance)}, which isn't enough for this. ")
@@ -540,7 +542,10 @@ public sealed class ShopOfferView : ViewModelBase
     public string Description => Offer.Description;
     public int Price => Offer.Price;
     public string PriceText => Offer.Price.ToString("N0", CultureInfo.CurrentCulture) + (Offer.Price == 1 ? " coin" : " coins");
-    public string PriceNumber => Offer.Price.ToString("N0", CultureInfo.CurrentCulture);
+    public string PriceNumber => IsFree ? "Free" : Offer.Price.ToString("N0", CultureInfo.CurrentCulture);
+    /// <summary>A 0-coin offer: "Free" in place of the coin and the number.</summary>
+    public bool IsFree => Offer.Price == 0;
+    public bool ShowCoin => !IsFree;
     public string CategoryTitle => ShopCategoryView.TitleOf(Offer.Category);
     /// <summary>The tile's turntable picture, small, once it's here; until then (or without one) the drawn icon.</summary>
     public Bitmap? Picture { get => _picture; set { if (SetProperty(ref _picture, value)) OnPropertyChanged(nameof(ShowIcon)); } }

@@ -281,6 +281,19 @@ internal static partial class Program
                 shop.HasNoCharacters && shop.SelectedCharacter is null && shop.Offers.All(o => o is { CanBuy: false, StateText: "No character" }));
             check("a single category needs no ALL tab", shop.Categories.Count == 1);
         }
+        using (var shop = Shop(new FakeShopPortal { ListingJson = """
+            {"balance":0,"characters":[{"guid":7,"name":"Alys","race":4,"class":11,"gender":1,"level":20,"online":false}],
+             "offers":[{"id":206,"category":"mount","name":"Whoofle Bramblewing","description":"A mount.","price":0,"owned":[],"cannot":[]}]}
+            """ }))
+        {
+            await shop.LoadAsync();
+            var offer = shop.Offers.Single();
+            check("a 0-coin offer says Free, without a coin", offer is { IsFree: true, ShowCoin: false, PriceNumber: "Free" });
+            check("a free offer can be had with an empty wallet", offer is { CanBuy: true, StateText: "" });
+            shop.AskToBuy(offer);
+            check("a free offer asks to get it, not to buy it, and leaves the wallet out",
+                shop.ConfirmText == "Get Whoofle Bramblewing for free for Alys?" && shop.ConfirmDetail == "A mount.");
+        }
     }
 
     private sealed class FakeShopPortal : HttpMessageHandler
