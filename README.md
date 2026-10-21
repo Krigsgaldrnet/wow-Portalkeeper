@@ -52,11 +52,11 @@ The root [Portalkeeper.slnx](Portalkeeper.slnx) and [application project](src/Po
 ./scripts/publish-linux.sh
 ```
 
-It requires `dotnet` and `zip` and currently produces `dist/Portalkeeper-0.2.1-linux-x64.zip`. Self-contained .NET does **not** bundle StormLib or guarantee all operating-system GUI/native libraries are installed. The script checks for private realm files and removes development symbols.
+It requires `dotnet` and `zip` and produces `dist/Portalkeeper-<version>-linux-x64.zip`, named from the project version. It bundles the .NET runtime and StormLib but not the operating system's GUI/native libraries. The script checks for private realm files and removes development symbols.
 
 ## Windows releases
 
-Two Windows release artifacts are offered, both built from the same project version (currently `0.2.1`). Both bundle the .NET runtime and `StormLib.dll`; no PowerShell launch or install script is required.
+Two Windows release artifacts are offered, both built from the same project version. Both bundle the .NET runtime and `StormLib.dll`; no PowerShell launch or install script is required.
 
 ### Portable
 
@@ -98,13 +98,13 @@ The portable ZIP alone is `pwsh scripts/publish-win.ps1` (or `scripts/build-win-
 
 Select the local folder containing `Wow.exe` and `Data` in Settings, for example `/path/to/WoW-335a` or `C:\Games\WoW-335a`. Executable validation checks supported metadata/build markers; it does not validate every archive. Linux launching requires `wine` or `wine64` on PATH. The launcher honors `WINEPREFIX`, otherwise tries matching desktop-launcher prefix information and then Wine's default prefix. Settings shows the detected launch environment.
 
-Portalkeeper 0.2.1 consumes **SchemaVersion=1**, generated and published by the server's **mod-realm-config** module. Portalkeeper has no database connection. Obtain the realm's public file from its administrator; [config/example.realm.conf](config/example.realm.conf) shows the complete contract.
+Portalkeeper consumes **SchemaVersion=1**, generated and published by the server's **mod-realm-config** module. Portalkeeper has no database connection. Obtain the realm's public file from its administrator; [config/example.realm.conf](config/example.realm.conf) shows the complete contract.
 
 Place your non-example `*.realm.conf` files in the persistent `Portalkeeper/realms` directory (Windows `%APPDATA%\Portalkeeper\realms`; Linux `$XDG_CONFIG_HOME/Portalkeeper/realms`, normally `~/.config/Portalkeeper/realms`). On first use, the launcher also discovers files beside the executable or in its `config/` folder and the working directory. It copies a single file to persistent storage and retains the original. When two or more usable files exist, Settings → Realm → CHANGE REALM opens a selector showing each realm’s name, description, address, and legacy status. The selected configuration path is saved with settings; switching retains the WoW client and only refreshes realm/client/component state. If the saved file disappears, a sole remaining realm is selected automatically; multiple remaining realms prompt you to choose in Settings. Persistent configurations take precedence over adjacent bootstrap files. With no saved selection, a sole valid Schema v1 realm also retains precedence over legacy files; those legacy realms remain selectable. Successful legacy migration follows the new persistent Schema v1 path. The bundled example and unusable configurations are not selectable.
 
 MANAGE PATCHES is shown only when the active realm defines managed patches. Switching realms updates its visibility without installing or removing patches.
 
-Portalkeeper checks the official Hisha/Portalkeeper latest stable GitHub release at startup at most approximately once per 24 hours. Attempts, including failures, are saved in settings; automatic failures stay quiet. Settings → CHECK FOR UPDATES bypasses the interval. A newer release appears as a non-blocking notice with VIEW RELEASE, which opens its official GitHub release page. Portalkeeper does not download or install updates. This advisory check is separate from a realm’s `MinimumVersion` requirement.
+Portalkeeper checks for a newer release at startup, asking the realm portal's `api/launcher/version.php` first and falling back to the GitHub releases of buildthehomelab/wow-Portalkeeper (at most every 6 hours, and only when the portal cannot answer). Installed Windows builds download the new Setup exe, check it against GitHub's published SHA-256 and install it once the game is closed (Settings can turn this off). Portable zips and Linux builds show a non-blocking notice with VIEW RELEASE, which opens the release page. Settings → CHECK FOR UPDATES checks right away. This is separate from a realm's `MinimumVersion` requirement.
 
 `[Realm] Name` is the administrator-controlled Portalkeeper display name. Optional `[Realm] GameRealmName` is the actual WoW realm name advertised by the authserver; it can differ from `Name` (for example, `Name=Eitrigg Realm` and `GameRealmName=Eitrigg`). On Enter Realm, Portalkeeper continues writing `[Connection] Address` to the locale's `realmlist.wtf` and, when `GameRealmName` is nonblank, writes `SET realmName "<GameRealmName>"` to `WTF/Config.wtf` before launching WoW. It replaces an existing realmName setting or adds one while retaining unrelated settings. Older realm files without `GameRealmName` leave `Config.wtf` untouched. `WorldPort` is not used to select a realm in client configuration. `[Client]` supplies version, build, executable name and optional SHA-256, preserving existing executable metadata/build-marker validation. `[Portalkeeper] MinimumVersion` uses semantic version comparison and gives an upgrade message if incompatible.
 
@@ -127,7 +127,7 @@ Linux preview loading tries `libstorm.so` then `libstorm.so.9`; Windows tries `S
 
 ## Addon management
 
-Realm addons are discovered dynamically from all `[Addon.<key>]` sections. There may be zero, one or many; the historical `config/addons.json` is no longer authoritative or shipped in releases. Required addons must exist with a `.toc` and have no known supported version/commit update before **ENTER REALM**. Recommended and Optional addons do not block launch; an absent Optional addon does not create a readiness warning.
+Realm addons are discovered dynamically from all `[Addon.<key>]` sections. There may be zero, one or many; Required addons must exist with a `.toc` and have no known supported version/commit update before **ENTER REALM**. Recommended and Optional addons do not block launch; an absent Optional addon does not create a readiness warning.
 
 GitHub sources reuse existing commit discovery and ZIP installation. `Ref` selects a branch or tag (including a release's tag); empty means the default branch. HTTP sources supply a ZIP containing the configured addon folder and a `.toc`. Schema v1 does not supply an addon hash; HTTP archives still undergo path, size, link and `.toc` validation. HTTPS is preferred; intentional HTTP remains supported. Downloaded scripts/executables are never executed by the installer.
 
@@ -201,11 +201,11 @@ stale-file cleanup is performed.
 ## Regression checks
 
 ```sh
-dotnet run --project tests/Portalkeeper.Tests -c Release
-bash tests/install-linux-upgrade.sh
+dotnet run --project tests/Portalkeeper.RuntimeTests -c Release -- launcher
+dotnet run --project tests/Portalkeeper.RuntimeTests -c Release -- patch-cache
 ```
 
-The dependency-free test executable covers parsing, migration/refresh rollback, semantic versions, path safety, client validation, preserved settings/addons, and real loopback HTTP addon/patch downloads. The shell test runs the Linux installer twice against an isolated fake package and verifies preservation. See [verification](docs/schema-v1-upgrade.md#verification).
+`tests/Portalkeeper.RuntimeTests` is a console harness with no test framework; it runs offline against stand-ins for the portal's endpoints and synthetic client files. See [verification](docs/schema-v1-upgrade.md#verification) and [isolated runtimes](docs/isolated-runtime.md#developer-tools) for the other modes.
 
 ## News, calendar and Armory
 
@@ -217,12 +217,10 @@ Tooltips retain the actual equipped item's name/quality, armor, stats, resistanc
 
 In Settings, **Show transmogrified appearances** sits below **Hide while WoW is running**, defaults on and persists per Armory URL. Unsupported feeds disable it with “This realm doesn’t support transmogrification.” Turning it off renders original gear while “Transmogrified to: …” remains in tooltips. Explicitly hidden appearances omit the visual item, not its equipment slot.
 
-See [current preview behavior](docs/armory-0.6-integration.md), [transmog details](docs/armory-transmog.md), [caching and troubleshooting](docs/operations.md) and [verification / Windows checklist](docs/verification.md). [Known implementation issues](docs/implementation-issues.md) are recorded separately.
+See [current preview behavior](docs/armory-0.6-integration.md), [transmog details](docs/armory-transmog.md), [caching, troubleshooting and known limits](docs/operations.md). Realms that want their own client directory can use [isolated runtimes](docs/isolated-runtime.md).
 
-## Privacy and historical material
+## Privacy
 
 Settings and caches live under the operating system's per-user application-data directory, in `Portalkeeper/`; client assets are not redistributed. Item icons can be fetched from the external `wow.zamimg.com` icon service. News/calendar/Armory are public-feed consumers, not authenticated account services.
-
-The [MPQ proof report](docs/armory-0.6-proof.md) is historical research, not current setup instructions. The actual checkout does not contain the standalone probe or earlier Armory test harnesses mentioned by historical reports; those references describe prior evidence, not runnable commands in this checkout. No developer tools were removed in this documentation review.
 
 See [LICENSE](LICENSE).

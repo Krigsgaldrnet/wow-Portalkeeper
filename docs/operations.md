@@ -11,7 +11,7 @@ The base is `<ApplicationData>/Portalkeeper`, using .NET's operating-system `App
 - `armory-cache/realms/<URL-SHA256>/`: `index.json` and `character-<id>.json`. Old unscoped Armory caches are not reused. Changing URL spelling creates a new scope.
 - `armory-cache/icons/`: shared cached icon JPEGs, fetched by icon name from the external icon service.
 - `armory-cache/previews/`: completed 480×640 PNGs, capped at 200. Preview keys include renderer version (`armory-render-v3`), realm URL, visual character/equipment/transmog data, capability/preference and archive paths/sizes/modification times. Stat-only changes do not need a new portrait. Invalid PNGs regenerate; completed writes replace through a temporary file.
-- `realm-news-cache.json` and `realm-calendar-cache.json`: last feed caches. Unlike Armory, these are not realm-URL scoped; see [known issues](implementation-issues.md).
+- `realm-news-cache.json` and `realm-calendar-cache.json`: last feed caches. Unlike Armory, these are not realm-URL scoped; see the known limits below.
 
 GitHub discovery, personal-addon and addon installation tracking also maintain local state; these are not release-package content. Managed-addon backups are in `<client>/.portalkeeper/backups/`. The launcher also backs up realmlist changes. Do not clear client backups or SavedVariables to refresh an Armory image.
 
@@ -33,3 +33,10 @@ Preview decoding/rendering runs off the UI thread with serialized rendering and 
 | Missing icon | Check icon service/cache; this does not establish that the client model is absent. |
 
 Do not edit server customization values or replace client assets to mask an unsupported appearance. Custom patch ordering/delta files and exhaustive gear coverage remain unverified. The renderer's static material/pose limitations are documented in [preview behavior](armory-0.6-integration.md).
+
+## Known limits
+
+- `StatusURL` is parsed into realm configuration but has no consumer; health checks use TCP to the auth and world ports.
+- The news and calendar cache files are shared across realm URLs, so after changing realm an offline load can show the previous realm's cached feed. Armory JSON caches are scoped by URL.
+- Custom archive handling is limited: unknown `patch*` names and encountered delta or deletion records fall back to the placeholder, and unrelated non-stock archive names are not part of the fixed priority list.
+- Preview cache keys fingerprint archives by path, size and modification time, not content hashes. Changing bytes while keeping size and time can evade automatic invalidation.
