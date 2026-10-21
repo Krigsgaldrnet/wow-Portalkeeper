@@ -16,7 +16,7 @@ namespace Portalkeeper.ViewModels;
 public sealed record WhatsNewItem(string Tag, IBrush TagBrush, string Headline, string? Detail);
 
 // Evermore fork: the home screen's right column under the realm status pill. "Live" is what the
-// portal says is going on now (players online, a pending restart, world events, rares up), asked
+// portal says is going on now (players online, a pending restart, world events, world bosses up), asked
 // along with the realm status every 45 seconds. "What's new" is the patch notes merged since the
 // player last pressed ENTER REALM, asked at start, after the game exits and every 15 minutes. Both
 // come from the built-in realm's portal only, and both simply hide when it doesn't answer.
@@ -47,7 +47,7 @@ public sealed partial class MainViewModel
 
     private RealmLive? Live => HomeInfoApplies && _live is not null && DateTimeOffset.UtcNow - _liveReceived < LiveShownFor ? _live : null;
 
-    public bool HasLiveInfo => HasLivePlayers || HasLiveRestart || HasLiveEvents || HasLiveRares;
+    public bool HasLiveInfo => HasLivePlayers || HasLiveRestart || HasLiveEvents || HasLiveBosses;
 
     public bool HasLivePlayers => Live?.Players is not null;
     public string LivePlayersText => Live?.Players is { } p
@@ -61,19 +61,9 @@ public sealed partial class MainViewModel
     public bool HasLiveEvents => Live?.Events is { Count: > 0 };
     public string LiveEventsText => Live?.Events is { Count: > 0 } events ? DescribeEvents(events) : "";
 
-    public bool HasLiveRares => Live?.Rares is { Total: > 0 };
-    public string LiveRaresText
-    {
-        get
-        {
-            if (Live?.Rares is not { Total: > 0 } rares) return "";
-            var text = $"{rares.Up} of {rares.Total} rares up";
-            var bosses = rares.WorldBosses.Where(b => b.Up).Select(b => b.Name).ToArray();
-            if (bosses.Length > 0)
-                text += " · " + string.Join(", ", bosses.Take(2)) + (bosses.Length > 2 ? $" +{bosses.Length - 2}" : "") + " up";
-            return text;
-        }
-    }
+    // World bosses only: the portal's count of every rare up isn't news to a player.
+    public bool HasLiveBosses => Live?.Rares?.WorldBosses is { Count: > 0 };
+    public string LiveBossesText => Live?.Rares?.WorldBosses is { Count: > 0 } bosses ? DescribeBosses(bosses) : "";
     public string RareMapUrl => RealmBranding.RareMapUrl;
 
     /// <summary>"in about 9 min", "in under a minute", "in about 2 h 5 min", "now".</summary>
@@ -84,6 +74,10 @@ public sealed partial class MainViewModel
         if (left < TimeSpan.FromHours(1)) return $"in about {(int)Math.Ceiling(left.TotalMinutes)} min";
         return $"in about {(int)left.TotalHours} h {left.Minutes} min";
     }
+
+    /// <summary>"3 of 8 world bosses up", "1 of 1 world boss up".</summary>
+    internal static string DescribeBosses(IReadOnlyList<RealmLiveBoss> bosses) =>
+        $"{bosses.Count(b => b.Up)} of {bosses.Count} world boss{(bosses.Count == 1 ? "" : "es")} up";
 
     /// <summary>"Brewfest is on", "Brewfest and Hallow's End are on", "Brewfest, Hallow's End and 2 more are on".</summary>
     internal static string DescribeEvents(IReadOnlyList<RealmLiveEvent> events)
@@ -196,8 +190,8 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(LiveRestartBrush));
         OnPropertyChanged(nameof(HasLiveEvents));
         OnPropertyChanged(nameof(LiveEventsText));
-        OnPropertyChanged(nameof(HasLiveRares));
-        OnPropertyChanged(nameof(LiveRaresText));
+        OnPropertyChanged(nameof(HasLiveBosses));
+        OnPropertyChanged(nameof(LiveBossesText));
         OnPropertyChanged(nameof(HasWhatsNew));
         OnPropertyChanged(nameof(WhatsNewTitle));
         OnPropertyChanged(nameof(WhatsNewItems));
