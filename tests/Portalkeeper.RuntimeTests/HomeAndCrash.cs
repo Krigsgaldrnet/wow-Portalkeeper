@@ -150,6 +150,9 @@ internal static partial class Program
             MainViewModel.DescribeEvents([new(1, "Brewfest")]) == "Brewfest is on"
             && MainViewModel.DescribeEvents([new(1, "Brewfest"), new(2, "Hallow's End")]) == "Brewfest and Hallow's End are on"
             && MainViewModel.DescribeEvents([new(1, "A"), new(2, "B"), new(3, "C"), new(4, "D")]) == "A, B and 2 more are on");
+        check("world bosses read as a count, not names",
+            MainViewModel.DescribeBosses([new("Azuregos", "Azshara", true, null), new("Ysondre", "Duskwood", false, 1900000000)]) == "1 of 2 world bosses up"
+            && MainViewModel.DescribeBosses([new("Azuregos", "Azshara", false, 1900000000)]) == "0 of 1 world boss up");
     }
 
     /// <summary>A portal that answers whatever <see cref="Answer"/> says and remembers the last request.</summary>
