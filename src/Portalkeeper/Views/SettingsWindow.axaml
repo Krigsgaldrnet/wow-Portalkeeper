@@ -337,8 +337,8 @@
                         <Border Background="#0E1B27" BorderBrush="#3B4B58" BorderThickness="1"
                                 CornerRadius="3" Padding="12,10"
                                 IsVisible="{Binding CombatLogSharingOffered}">
-                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
-                                <CheckBox Grid.RowSpan="2"
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+                                <CheckBox Grid.RowSpan="3"
                                           IsChecked="{Binding ShareCombatLogs, Mode=TwoWay}"
                                           VerticalAlignment="Center"
                                           Margin="0,0,12,0" />
@@ -353,6 +353,14 @@
                                            Text="Turns combat logging on in dungeons and raids and uploads the log when you close the game. It helps tune the realm's bots. Off by default."
                                            Margin="0,4,0,0"
                                            Foreground="#8E9AA5"
+                                           FontSize="11"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="2"
+                                           Grid.Column="1"
+                                           Text="{Binding CombatLogSharingDetail}"
+                                           IsVisible="{Binding ShareCombatLogs}"
+                                           Margin="0,6,0,0"
+                                           Foreground="#E8B64C"
                                            FontSize="11"
                                            TextWrapping="Wrap" />
                             </Grid>

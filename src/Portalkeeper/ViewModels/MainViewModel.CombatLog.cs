@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Text.Json;
@@ -10,7 +11,8 @@ namespace Portalkeeper.ViewModels;
 
 // Evermore fork: sharing combat logs with the realm (CombatLogUploadService). Off until the player
 // turns it on in Settings, and only offered when the portal says the realm collects them. Nothing
-// here holds up a launch or reports a failure: what didn't go out goes with the next run.
+// here holds up a launch: what didn't go out goes with the next run. The footer shows an upload
+// while it runs and how it ended for a few minutes after.
 public sealed partial class MainViewModel
 {
     private readonly CombatLogUploadService _combatLogs = new();
@@ -22,6 +24,10 @@ public sealed partial class MainViewModel
     private bool _combatLogOfferKnown;
     private bool _combatLogStartupDone;
     private string _combatLogStatus = "";
+    private CancellationTokenSource? _combatLogStatusExpiry;
+
+    // How long the footer keeps saying how an upload ended.
+    private static readonly TimeSpan CombatLogResultShown = TimeSpan.FromMinutes(5);
 
     // The portal is the built-in realm's: another realm's logs are none of its business.
     private bool CombatLogsApply => IsLoggedIn && RealmBranding.IsBuiltIn(_realmInfo);
@@ -72,12 +78,45 @@ public sealed partial class MainViewModel
 
     public string CombatLogStatus => _combatLogStatus;
 
+    public bool HasCombatLogStatus => _combatLogStatus.Length > 0;
+
+    /// <summary>Under the option in Settings: what is going on now, else when a log last went out.</summary>
+    public string CombatLogSharingDetail
+    {
+        get
+        {
+            if (HasCombatLogStatus) return _combatLogStatus;
+            if (_savedSettings.CombatLogLastSent is not { } sent) return "Nothing sent yet.";
+            var local = sent.ToLocalTime();
+            var day = local.Date == DateTime.Today ? "today"
+                : local.Date == DateTime.Today.AddDays(-1) ? "yesterday"
+                : local.ToString("MMM d", CultureInfo.CurrentCulture);
+            return $"Last sent {day} at {local.ToString("t", CultureInfo.CurrentCulture)}.";
+        }
+    }
+
     private void SetCombatLogStatus(string status)
     {
+        _combatLogStatusExpiry?.Cancel();
+        _combatLogStatusExpiry = null;
         if (_combatLogStatus == status) return;
         _combatLogStatus = status;
         OnPropertyChanged(nameof(CombatLogStatus));
+        OnPropertyChanged(nameof(HasCombatLogStatus));
+        OnPropertyChanged(nameof(CombatLogSharingDetail));
         OnPropertyChanged(nameof(FooterText));
+    }
+
+    /// <summary>Shows how an upload ended, then clears it after a while (unless something else replaced it).</summary>
+    private async void ShowCombatLogResult(string result)
+    {
+        SetCombatLogStatus(result);
+        if (result.Length == 0) return;
+        using var expiry = new CancellationTokenSource();
+        _combatLogStatusExpiry = expiry;
+        try { await Task.Delay(CombatLogResultShown, expiry.Token); }
+        catch (OperationCanceledException) { return; }
+        if (ReferenceEquals(_combatLogStatusExpiry, expiry)) SetCombatLogStatus("");
     }
 
     /// <summary>
@@ -169,6 +208,7 @@ public sealed partial class MainViewModel
     {
         try { await _combatLogLock.WaitAsync(_combatLogShutdown.Token); }
         catch (OperationCanceledException) { return; }
+        string? outcome = null;
         try
         {
             if (afterGame) await RefreshCombatLogOfferAsync();
@@ -192,8 +232,15 @@ public sealed partial class MainViewModel
             _combatLogRun = run;
             var progress = new Progress<string>(SetCombatLogStatus);
             // Compressing and hashing a few hundred MB: not on the UI thread.
-            _combatLogWork = Task.Run(() => _combatLogs.UploadPendingAsync(client, session, offer, progress, run.Token, collect));
-            await _combatLogWork;
+            var work = Task.Run(() => _combatLogs.UploadPendingAsync(client, session, offer, progress, run.Token, collect));
+            _combatLogWork = work;
+            var result = await work;
+            if (result.Uploaded > 0)
+            {
+                _savedSettings.CombatLogLastSent = DateTimeOffset.UtcNow;
+                SaveSettings();
+            }
+            outcome = result.Describe(stopped: run.IsCancellationRequested);
         }
         catch (Exception)
         {
@@ -202,7 +249,9 @@ public sealed partial class MainViewModel
         finally
         {
             _combatLogRun = null;
-            SetCombatLogStatus("");
+            if (outcome is { Length: > 0 }) ShowCombatLogResult(outcome);
+            // A run that sent nothing and left nothing leaves an earlier result where it is.
+            else if (_combatLogStatusExpiry is null) SetCombatLogStatus("");
             _combatLogLock.Release();
         }
     }

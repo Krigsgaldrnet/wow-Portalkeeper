@@ -304,7 +304,11 @@
 
             <!-- Footer -->
             <Grid Grid.Row="3" Margin="34,0,34,8" ColumnDefinitions="*,Auto">
-                <TextBlock Text="{Binding FooterText}" Foreground="#8C8273" FontSize="11" VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding FooterText}" Foreground="#8C8273" FontSize="11" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding CombatLogStatus}" IsVisible="{Binding HasCombatLogStatus}"
+                               Foreground="#E8B64C" FontSize="11" VerticalAlignment="Center" />
+                </StackPanel>
                 <TextBlock Grid.Column="1" Text="{Binding AccountSummary}" Foreground="#8C8273" FontSize="11" VerticalAlignment="Center" />
             </Grid>
         </Grid>
