@@ -21,7 +21,25 @@ public sealed record CombatLogOffer(int PartSize, long MaxSize);
 /// <param name="Uploaded">Logs the portal confirmed (and that are deleted here).</param>
 /// <param name="Discarded">Logs deleted without being sent: older than 14 days or too large.</param>
 /// <param name="Pending">Logs left for the next run.</param>
-public sealed record CombatLogUploadResult(int Uploaded, int Discarded, int Pending);
+public sealed record CombatLogUploadResult(int Uploaded, int Discarded, int Pending)
+{
+    /// <summary>
+    /// The line the player sees once a run is over, or "" when there was nothing to send. A run the
+    /// game or Portalkeeper's exit stopped (<paramref name="stopped"/>) says nothing about what's left.
+    /// </summary>
+    public string Describe(bool stopped = false)
+    {
+        var sent = Uploaded switch
+        {
+            0 => "",
+            1 => "Combat log sent to the realm ✓",
+            _ => $"{Uploaded} combat logs sent to the realm ✓"
+        };
+        if (stopped || Pending == 0) return sent;
+        var left = Pending == 1 ? "1 combat log not sent yet" : $"{Pending} combat logs not sent yet";
+        return (sent.Length > 0 ? sent + " · " : "") + left + ", trying again next time";
+    }
+}
 
 /// <summary>
 /// Sharing combat logs with the realm, for players who turn it on in Settings (off by default; the

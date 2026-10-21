@@ -98,8 +98,9 @@ public sealed partial class MainViewModel
         get
         {
             var text = RealmBranding.LauncherName + " · " + ApplicationVersion;
-            // A combat log upload is short: while it runs it takes the sharing summary's place.
-            if (CombatLogStatus.Length > 0) return text + " · " + CombatLogStatus;
+            // A combat log upload (and how it went) takes the sharing summary's place, in its own
+            // brighter line next to this one (CombatLogStatus).
+            if (HasCombatLogStatus) return text + " · ";
             return SharingStatus.Length > 0 ? text + " · " + SharingStatus : text;
         }
     }

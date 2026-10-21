@@ -355,6 +355,17 @@ internal static partial class Program
             && portal.Unauthorized == 1 && Left(offline).Length == 2);
         result = await Service(portal).UploadPendingAsync(offline, session, offer);
         check("and it goes out with the next run", result == new CombatLogUploadResult(1, 0, 0) && Left(offline).Length == 0);
+
+        // What the player is told once a run is over.
+        check("one log sent says so", new CombatLogUploadResult(1, 0, 0).Describe() == "Combat log sent to the realm ✓");
+        check("several logs sent are counted", new CombatLogUploadResult(3, 1, 0).Describe() == "3 combat logs sent to the realm ✓");
+        check("nothing to send says nothing", new CombatLogUploadResult(0, 2, 0).Describe() == "");
+        check("a log left behind is mentioned",
+            new CombatLogUploadResult(0, 0, 1).Describe() == "1 combat log not sent yet, trying again next time");
+        check("along with what did go out",
+            new CombatLogUploadResult(1, 0, 2).Describe() == "Combat log sent to the realm ✓ · 2 combat logs not sent yet, trying again next time");
+        check("a run the game stopped doesn't call what's left a failure",
+            new CombatLogUploadResult(0, 0, 1).Describe(stopped: true) == "" && new CombatLogUploadResult(1, 0, 1).Describe(stopped: true) == "Combat log sent to the realm ✓");
     }
 
     /// <summary>The portal's combatlog.php as the launcher sees it, with switches for what can go wrong.</summary>
