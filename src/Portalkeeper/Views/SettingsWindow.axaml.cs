@@ -44,6 +44,15 @@ public partial class SettingsWindow : Window
             await new ManageAddonsWindow { DataContext = vm }.ShowDialog(this);
     }
 
+    private async void RepairGame_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm) return;
+        // The repair shows on the home card; Settings would only hide it.
+        Close();
+        vm.DismissCrash();
+        await vm.RepairGameAsync();
+    }
+
     private async void LogOut_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is MainViewModel vm)

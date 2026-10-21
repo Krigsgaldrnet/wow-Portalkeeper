@@ -1,0 +1,83 @@
+<!-- Evermore fork: DragonUI's look for the launcher's windows (DragonUI.cs). Included by a window's
+     Styles: its buttons become DragonUI's red buttons, except the ones with a look of their own
+     (link, chrome, gold, plain), and "inset" buttons are a filigree frame over marble. -->
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:Portalkeeper.Views">
+
+    <Style Selector="Button:not(.link):not(.chrome):not(.gold):not(.plain):not(.inset)">
+        <Setter Property="Foreground" Value="#FFD100" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Padding" Value="18,9" />
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Panel>
+                    <views:RedButtonChrome />
+                    <ContentPresenter Name="DragonContent"
+                                      Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      Padding="{TemplateBinding Padding}"
+                                      Foreground="{TemplateBinding Foreground}"
+                                      HorizontalContentAlignment="Center"
+                                      VerticalContentAlignment="Center" />
+                </Panel>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="Button:not(.link):not(.chrome):not(.gold):not(.plain):not(.inset):pointerover">
+        <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+    <Style Selector="Button:not(.link):not(.chrome):not(.gold):not(.plain):not(.inset):disabled">
+        <Setter Property="Foreground" Value="#8A8A8A" />
+    </Style>
+
+    <Style Selector="Button.inset">
+        <Setter Property="Foreground" Value="#D8CCBA" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <views:DragonFrame Kind="SmallInset" Ground="Marble" Padding="{TemplateBinding Padding}">
+                    <ContentPresenter Name="DragonContent"
+                                      Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      Foreground="{TemplateBinding Foreground}"
+                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                </views:DragonFrame>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="Button.inset:pointerover /template/ ContentPresenter#DragonContent">
+        <Setter Property="Background" Value="#14FFE9A8" />
+    </Style>
+
+    <!-- Check boxes in DragonUI's gold rather than the system accent -->
+    <Style Selector="CheckBox:checked /template/ Border#NormalRectangle">
+        <Setter Property="Background" Value="#3A2A14" />
+        <Setter Property="BorderBrush" Value="#E8B64C" />
+    </Style>
+    <Style Selector="CheckBox:checked:pointerover /template/ Border#NormalRectangle">
+        <Setter Property="Background" Value="#4A3518" />
+        <Setter Property="BorderBrush" Value="#FFD100" />
+    </Style>
+    <Style Selector="CheckBox:checked /template/ Path#CheckGlyph">
+        <Setter Property="Fill" Value="#FFD100" />
+    </Style>
+    <Style Selector="CheckBox:unchecked /template/ Border#NormalRectangle">
+        <Setter Property="Background" Value="#1A140E" />
+        <Setter Property="BorderBrush" Value="#8C6A2E" />
+    </Style>
+
+    <!-- Drop-downs: dark with a bronze edge, like DragonUI's -->
+    <Style Selector="ComboBox">
+        <Setter Property="Background" Value="#1A140E" />
+        <Setter Property="BorderBrush" Value="#8C6A2E" />
+        <Setter Property="Foreground" Value="#F2E7D0" />
+    </Style>
+    <Style Selector="ComboBox:pointerover /template/ Border#Background">
+        <Setter Property="Background" Value="#241B12" />
+        <Setter Property="BorderBrush" Value="#E8B64C" />
+    </Style>
+</Styles>

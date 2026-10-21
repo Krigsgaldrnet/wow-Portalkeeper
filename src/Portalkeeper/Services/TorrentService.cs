@@ -13,7 +13,9 @@ namespace Portalkeeper.Services;
 
 /// <param name="Peers">Other players sending to us.</param>
 /// <param name="WebSeeds">The realm's web seeds connected (its server sending the files over HTTP).</param>
-public sealed record TorrentProgress(double Percent, long DoneBytes, long TotalBytes, long DownloadRate, long UploadRate, int Peers, int WebSeeds = 0);
+/// <param name="Checking">The files already there are being hash-checked; Percent is how far that got.</param>
+public sealed record TorrentProgress(double Percent, long DoneBytes, long TotalBytes, long DownloadRate, long UploadRate, int Peers, int WebSeeds = 0,
+    bool Checking = false);
 
 /// <param name="Shared">Torrents being shared: the client counts as one, however many files it has.</param>
 /// <param name="ClientShared">One of them is the client torrent asked about.</param>
@@ -102,7 +104,7 @@ public sealed class TorrentService
                 foreach (var file in manager.Files)
                     await manager.SetFilePriorityAsync(file, Priority.Normal);
                 if (!await TryLoadFastResumeAsync(manager) && manager.Files.Any(f => File.Exists(f.FullPath)))
-                    await manager.HashCheckAsync(false);
+                    await HashCheckAsync(manager, progress, cancellationToken);
                 await manager.StartAsync();
             }
         }
@@ -271,6 +273,30 @@ public sealed class TorrentService
     }
 
     /// <summary>
+    /// Makes the next <see cref="DownloadAsync"/> of this torrent hash-check every file again instead of
+    /// trusting its resume data (REPAIR GAME): takes it out of the engine and deletes that data. The
+    /// files themselves stay.
+    /// </summary>
+    public async Task ForgetResumeAsync(byte[] torrentBytes)
+    {
+        var torrent = Torrent.Load(torrentBytes);
+        await _lock.WaitAsync();
+        try
+        {
+            if (_engine?.Torrents.FirstOrDefault(m => m.InfoHashes == torrent.InfoHashes) is { } manager)
+            {
+                if (manager.State != TorrentState.Stopped)
+                    await manager.StopAsync(TimeSpan.FromSeconds(3));
+                await _engine.RemoveAsync(manager, RemoveMode.KeepAllData);
+            }
+            var key = Key(torrent.InfoHashes);
+            foreach (var path in new[] { ResumePath(key), StampPath(key) })
+                if (File.Exists(path)) File.Delete(path);
+        }
+        finally { _lock.Release(); }
+    }
+
+    /// <summary>
     /// Forgets a download that won't be finished (a patch that fell back to HTTP): stops it and deletes
     /// its partial files and resume data, but only when it was downloading into <paramref name="saveDirectory"/>.
     /// </summary>
@@ -386,6 +412,35 @@ public sealed class TorrentService
         await SaveFastResumeAsync(manager);
     }
 
+    /// <summary>
+    /// Hash-checks the files already on disk, saying how far it got (each whole percent, not each piece).
+    /// Cancelling stops the torrent, which ends the check: a whole client takes minutes, and Portalkeeper
+    /// closing or PAUSE shouldn't wait for it.
+    /// </summary>
+    private static async Task HashCheckAsync(TorrentManager manager, IProgress<TorrentProgress>? progress, CancellationToken cancellationToken)
+    {
+        var total = manager.Torrent?.Size ?? 0;
+        var reported = -1;
+        void Report(object? sender, PieceHashedEventArgs e)
+        {
+            var percent = (int)(e.Progress * 100);
+            if (Interlocked.Exchange(ref reported, percent) == percent) return;
+            progress?.Report(new TorrentProgress(e.Progress * 100, (long)(total * e.Progress), total, 0, 0, 0, Checking: true));
+        }
+        manager.PieceHashed += Report;
+        try
+        {
+            using (cancellationToken.Register(() => _ = manager.StopAsync(TimeSpan.FromSeconds(3))))
+                await manager.HashCheckAsync(false);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // Stopping mid-check ends it with whatever MonoTorrent throws for that.
+        }
+        finally { manager.PieceHashed -= Report; }
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
     private static async Task<TorrentProgress> ProgressAsync(TorrentManager manager)
     {
         var total = manager.Torrent?.Size ?? 0;
@@ -401,8 +456,10 @@ public sealed class TorrentService
 
     private static string Key(TorrentManager manager) => Key(manager.InfoHashes);
     private static string Key(InfoHashes hashes) => (hashes.V1 ?? hashes.V2!).ToHex().ToLowerInvariant();
-    private string ResumePath(TorrentManager manager) => Path.Combine(_cacheDirectory, "resume", Key(manager) + ".fresume");
-    private string StampPath(TorrentManager manager) => Path.Combine(_cacheDirectory, "resume", Key(manager) + ".files.json");
+    private string ResumePath(TorrentManager manager) => ResumePath(Key(manager));
+    private string StampPath(TorrentManager manager) => StampPath(Key(manager));
+    private string ResumePath(string key) => Path.Combine(_cacheDirectory, "resume", key + ".fresume");
+    private string StampPath(string key) => Path.Combine(_cacheDirectory, "resume", key + ".files.json");
 
     private static FileStamp[] Stamps(TorrentManager manager) => manager.Files.Select(f =>
     {

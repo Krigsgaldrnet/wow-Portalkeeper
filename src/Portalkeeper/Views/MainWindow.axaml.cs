@@ -53,6 +53,40 @@ public partial class MainWindow : Window
             OpenUrl(vm.PatchNotesUrl);
     }
 
+    private void WhatsNew_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+            OpenUrl(vm.WhatsNewUrl);
+    }
+
+    private void RareMap_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+            OpenUrl(vm.RareMapUrl);
+    }
+
+    private async void SendCrashReport_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm) await vm.SendCrashReportAsync();
+    }
+
+    private async void AlwaysSendCrashReports_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm) await vm.SendCrashReportAsync(always: true);
+    }
+
+    private void DismissCrash_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm) vm.DismissCrash();
+    }
+
+    private async void RepairGame_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm) return;
+        vm.DismissCrash();
+        await vm.RepairGameAsync();
+    }
+
     private static void OpenUrl(string url)
     {
         if (!System.Uri.TryCreate(url, System.UriKind.Absolute, out var uri) || (uri.Scheme != "https" && uri.Scheme != "http")) return;

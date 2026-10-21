@@ -31,6 +31,9 @@ public static class RealmBranding
     /// <summary>The realm's patch notes page.</summary>
     public const string PatchNotesUrl = "https://wow.vaultrona.com/changelog.php";
 
+    /// <summary>The realm's live map of rares and world bosses.</summary>
+    public const string RareMapUrl = "https://wow.vaultrona.com/rares.php";
+
     /// <summary>Where players register an account.</summary>
     public const string AccountSignupUrl = "https://wow.vaultrona.com/";
 

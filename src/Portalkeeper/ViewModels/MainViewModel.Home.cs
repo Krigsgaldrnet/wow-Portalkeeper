@@ -63,7 +63,8 @@ public sealed partial class MainViewModel
 
     public string CardTitle => Card switch
     {
-        HomeCard.Installing => _isRepairingClient ? "Updating World of Warcraft" : "Downloading World of Warcraft",
+        HomeCard.Installing => _isRepairingGame ? "Repairing World of Warcraft"
+            : _isRepairingClient ? "Updating World of Warcraft" : "Downloading World of Warcraft",
         HomeCard.NoClient => HasPendingClientInstall ? "Your install is paused"
             : ClientValid ? "Update your client to " + RealmBranding.LauncherName : "Install World of Warcraft",
         HomeCard.Syncing => "Updating realm files",
@@ -79,7 +80,7 @@ public sealed partial class MainViewModel
             : ClientValid ? "INSTALL WOW and pick this client's folder to update it in place (only files that differ are downloaded, "
                 + "files the realm doesn't ship are deleted, addons and settings stay), or pick another folder for a fresh copy."
             : "Download the realm's client. Pick a folder with a 3.3.5a client in it to use it as the base and download only what differs.",
-        HomeCard.Ready => "Patches and addons are installed and verified.",
+        HomeCard.Ready => HasRepairStatus ? RepairStatus : "Patches and addons are installed and verified.",
         _ => LaunchStatus
     };
 
