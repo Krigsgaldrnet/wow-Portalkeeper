@@ -2,6 +2,7 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:Portalkeeper.ViewModels"
+    xmlns:views="using:Portalkeeper.Views"
     x:Class="Portalkeeper.Views.SettingsWindow"
     x:DataType="vm:MainViewModel"
     Width="760"
@@ -13,6 +14,7 @@
     Background="#091019">
 
     <Window.Styles>
+        <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml" />
         <Style Selector="Button">
             <Setter Property="Background" Value="#111A24" />
             <Setter Property="Foreground" Value="#F6D477" />
@@ -35,7 +37,10 @@
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="Auto,*,Auto">
+    <Panel>
+    <!-- DragonUI: a rock ground in a bronze frame, sections as marble insets -->
+    <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
+    <Grid RowDefinitions="Auto,*,Auto" Margin="6,0,6,6">
         <!-- Shared Portalkeeper cinematic header -->
         <Border Grid.Row="0"
                 Background="#0A1119"
@@ -47,21 +52,8 @@
                        Opacity="0.86" />
                 <Border Background="#77040A12" />
 
-                <Grid Margin="20,10" ColumnDefinitions="68,*,Auto">
-                    <Border Width="58"
-                            Height="58"
-                            CornerRadius="29"
-                            BorderBrush="#B77A20"
-                            BorderThickness="2"
-                            Background="#11131A"
-                            VerticalAlignment="Center">
-                        <Image Source="/Assets/portalkeeper-icon.png"
-                               Margin="3"
-                               Stretch="Uniform" />
-                    </Border>
-
-                    <StackPanel Grid.Column="1"
-                                Margin="14,0,0,0"
+                <Grid Margin="24,10" ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0"
                                 VerticalAlignment="Center"
                                 Spacing="2">
                         <TextBlock Text="SETTINGS"
@@ -73,7 +65,7 @@
                                    FontSize="13" />
                     </StackPanel>
 
-                    <StackPanel Grid.Column="2"
+                    <StackPanel Grid.Column="1"
                                 VerticalAlignment="Center"
                                 HorizontalAlignment="Right"
                                 Spacing="2">
@@ -94,10 +86,7 @@
         <ScrollViewer Grid.Row="1">
             <StackPanel Margin="20,18" Spacing="14">
                 <!-- Client -->
-                <Border Background="#0E1823"
-                        BorderBrush="#6E5426"
-                        BorderThickness="1"
-                        CornerRadius="4"
+                <views:DragonFrame Ground="Marble"
                         Padding="16">
                     <Grid ColumnDefinitions="Auto,*">
                         <Border Width="42" Height="42"
@@ -134,17 +123,22 @@
                                        TextWrapping="Wrap" />
                             <WrapPanel Margin="0,6,0,0">
                                 <Button Content="{Binding ClientButtonText}" Click="LocateClient_Click" Margin="0,0,10,0" />
-                                <Button Content="MANAGE ADDONS" Click="ManageAddons_Click" IsEnabled="{Binding ClientValid}" />
+                                <Button Content="MANAGE ADDONS" Click="ManageAddons_Click" IsEnabled="{Binding ClientValid}" Margin="0,0,10,0" />
+                                <Button Content="REPAIR GAME" Click="RepairGame_Click" IsEnabled="{Binding CanRepairGame}"
+                                        ToolTip.Tip="Clears the cache, reinstalls the realm's addons and checks every game file, downloading what's damaged. Your own addons and settings stay." />
                             </WrapPanel>
+                            <TextBlock Text="{Binding RepairStatus}"
+                                       IsVisible="{Binding HasRepairStatus}"
+                                       Margin="0,4,0,0"
+                                       FontSize="12"
+                                       Foreground="#E8B64C"
+                                       TextWrapping="Wrap" />
                         </StackPanel>
                     </Grid>
-                </Border>
+                </views:DragonFrame>
 
                 <!-- Realm -->
-                <Border Background="#0E1823"
-                        BorderBrush="#6E5426"
-                        BorderThickness="1"
-                        CornerRadius="4"
+                <views:DragonFrame Ground="Marble"
                         Padding="16">
                     <Grid ColumnDefinitions="Auto,*">
                         <Border Width="42" Height="42"
@@ -178,13 +172,10 @@
                                     HorizontalAlignment="Left" Margin="0,8,0,0" />
                         </StackPanel>
                     </Grid>
-                </Border>
+                </views:DragonFrame>
 
                 <!-- Launch environment -->
-                <Border Background="#0E1823"
-                        BorderBrush="#6E5426"
-                        BorderThickness="1"
-                        CornerRadius="4"
+                <views:DragonFrame Ground="Marble"
                         Padding="16">
                     <Grid ColumnDefinitions="Auto,*">
                         <Border Width="42" Height="42"
@@ -211,9 +202,9 @@
                                        TextWrapping="Wrap" />
                         </StackPanel>
                     </Grid>
-                </Border>
+                </views:DragonFrame>
 
-                <Border Background="#0E1823" BorderBrush="#6E5426" BorderThickness="1" CornerRadius="4" Padding="16">
+                <views:DragonFrame Ground="Marble" Padding="16">
                     <StackPanel Spacing="9">
                         <TextBlock Text="{Binding ApplicationVersion}" Foreground="#D5AA50" FontWeight="Bold" />
                         <TextBlock Text="{Binding UpdateStatus}" Foreground="#D8CCBA" TextWrapping="Wrap" />
@@ -226,23 +217,17 @@
                                   IsVisible="{Binding CanUpdateInPlace}"
                                   Foreground="#F2E7D0" />
                     </StackPanel>
-                </Border>
+                </views:DragonFrame>
 
                 <!-- Behavior -->
-                <Border Background="#0A141E"
-                        BorderBrush="#40331E"
-                        BorderThickness="1"
-                        CornerRadius="4"
+                <views:DragonFrame Ground="Marble"
                         Padding="16">
                     <StackPanel Spacing="10">
                         <TextBlock Text="BEHAVIOR"
                                    FontSize="11"
                                    FontWeight="Bold"
                                    Foreground="#D5AA50" />
-                        <Border Background="#0E1B27"
-                                BorderBrush="#3B4B58"
-                                BorderThickness="1"
-                                CornerRadius="3"
+                        <views:DragonFrame Kind="SmallInset" Ground="None"
                                 Padding="12,10">
                             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
                                 <CheckBox Grid.RowSpan="2"
@@ -263,31 +248,26 @@
                                            FontSize="11"
                                            TextWrapping="Wrap" />
                             </Grid>
-                        </Border>
-                        <Border Background="#0E1B27" BorderBrush="#3B4B58" BorderThickness="1"
-                                CornerRadius="3" Padding="12,10"
+                        </views:DragonFrame>
+                        <views:DragonFrame Kind="SmallInset" Ground="None" Padding="12,10"
                                 x:Name="TransmogSettingRow" ToolTip.Tip="{Binding TransmogAvailabilityHint}">
                             <CheckBox x:Name="ShowTransmogCheckBox" Content="Show transmogrified appearances"
                                       IsChecked="{Binding ShowTransmogrifiedAppearances, Mode=TwoWay}"
                                       IsEnabled="{Binding TransmogrificationSupported}"
                                       Foreground="#F2E7D0" />
-                        </Border>
+                        </views:DragonFrame>
                     </StackPanel>
-                </Border>
+                </views:DragonFrame>
 
                 <!-- Account and sharing (Vaultrona fork) -->
-                <Border Background="#0A141E"
-                        BorderBrush="#40331E"
-                        BorderThickness="1"
-                        CornerRadius="4"
+                <views:DragonFrame Ground="Marble"
                         Padding="16">
                     <StackPanel Spacing="10">
                         <TextBlock Text="ACCOUNT AND SHARING"
                                    FontSize="11"
                                    FontWeight="Bold"
                                    Foreground="#D5AA50" />
-                        <Border Background="#0E1B27" BorderBrush="#3B4B58" BorderThickness="1"
-                                CornerRadius="3" Padding="12,10">
+                        <views:DragonFrame Kind="SmallInset" Ground="None" Padding="12,10">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Text="{Binding AccountSummary}"
                                            Foreground="#F2E7D0"
@@ -296,9 +276,8 @@
                                            VerticalAlignment="Center" />
                                 <Button Grid.Column="1" Content="LOG OUT" Click="LogOut_Click" />
                             </Grid>
-                        </Border>
-                        <Border Background="#0E1B27" BorderBrush="#3B4B58" BorderThickness="1"
-                                CornerRadius="3" Padding="12,10">
+                        </views:DragonFrame>
+                        <views:DragonFrame Kind="SmallInset" Ground="None" Padding="12,10">
                             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
                                 <CheckBox Grid.RowSpan="2"
                                           IsChecked="{Binding ShareDownloads, Mode=TwoWay}"
@@ -318,9 +297,8 @@
                                            FontSize="11"
                                            TextWrapping="Wrap" />
                             </Grid>
-                        </Border>
-                        <Border Background="#0E1B27" BorderBrush="#3B4B58" BorderThickness="1"
-                                CornerRadius="3" Padding="12,10">
+                        </views:DragonFrame>
+                        <views:DragonFrame Kind="SmallInset" Ground="None" Padding="12,10">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                                 <TextBlock Text="Upload speed limit"
                                            Foreground="#F2E7D0"
@@ -332,10 +310,9 @@
                                           SelectedIndex="{Binding UploadLimitIndex, Mode=TwoWay}"
                                           IsEnabled="{Binding ShareDownloads}" />
                             </Grid>
-                        </Border>
+                        </views:DragonFrame>
                         <!-- Only when the realm collects combat logs (the portal says so) -->
-                        <Border Background="#0E1B27" BorderBrush="#3B4B58" BorderThickness="1"
-                                CornerRadius="3" Padding="12,10"
+                        <views:DragonFrame Kind="SmallInset" Ground="None" Padding="12,10"
                                 IsVisible="{Binding CombatLogSharingOffered}">
                             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
                                 <CheckBox Grid.RowSpan="3"
@@ -364,9 +341,32 @@
                                            FontSize="11"
                                            TextWrapping="Wrap" />
                             </Grid>
-                        </Border>
+                        </views:DragonFrame>
+                        <!-- Only when the realm takes crash reports (the portal says so) -->
+                        <views:DragonFrame Kind="SmallInset" Ground="None" Padding="12,10"
+                                IsVisible="{Binding CrashReportsOffered}">
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+                                <CheckBox Grid.RowSpan="2"
+                                          IsChecked="{Binding SendCrashReports, Mode=TwoWay}"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,12,0" />
+                                <TextBlock Grid.Column="1"
+                                           Text="Send crash reports without asking"
+                                           Foreground="#F2E7D0"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="1"
+                                           Grid.Column="1"
+                                           Text="When World of Warcraft crashes, the error report it wrote goes to the realm so the crash can be looked into. Your Windows user and computer names are taken out first. Off: Portalkeeper asks each time."
+                                           Margin="0,4,0,0"
+                                           Foreground="#8E9AA5"
+                                           FontSize="11"
+                                           TextWrapping="Wrap" />
+                            </Grid>
+                        </views:DragonFrame>
                     </StackPanel>
-                </Border>
+                </views:DragonFrame>
 
                 <!-- Isolated runtime (developer test): hidden for players in the Vaultrona build -->
                 <Border IsVisible="False"
@@ -419,7 +419,7 @@
         </ScrollViewer>
 
         <Border Grid.Row="2"
-                Background="#081019"
+                Background="Transparent"
                 BorderBrush="#5B431B"
                 BorderThickness="0,1,0,0"
                 Padding="18,12">
@@ -435,4 +435,5 @@
             </Grid>
         </Border>
     </Grid>
+    </Panel>
 </Window>

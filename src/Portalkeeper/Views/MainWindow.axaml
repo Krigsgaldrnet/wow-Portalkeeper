@@ -4,6 +4,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:Portalkeeper.ViewModels"
+    xmlns:views="using:Portalkeeper.Views"
     mc:Ignorable="d"
     d:DesignWidth="1100"
     d:DesignHeight="660"
@@ -23,6 +24,7 @@
     <!-- Evermore fork: one scene, like a game launcher. Realm, client, addons and sharing details
          live in Settings; required patches and addons look after themselves. -->
     <Window.Styles>
+        <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml" />
         <Style Selector="Button">
             <Setter Property="Background" Value="#CC0B141E" />
             <Setter Property="Foreground" Value="#F6D477" />
@@ -54,6 +56,17 @@
         <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="#FFE9A8" />
+        </Style>
+
+        <!-- A line on the home screen that opens a page -->
+        <Style Selector="Button.plain">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.plain:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
         </Style>
 
         <!-- Window buttons -->
@@ -158,10 +171,13 @@
             </Border.Background>
         </Border>
 
+        <!-- DragonUI's bronze window frame; its title band is the top bar. -->
+        <views:DragonFrame Kind="Bronze" Ground="None" Scale="1.6" IsHitTestVisible="False" />
+
         <Grid RowDefinitions="40,*,Auto,30">
 
             <!-- Top bar: drag to move -->
-            <Grid Grid.Row="0" Background="#66040709" ColumnDefinitions="*,Auto"
+            <Grid Grid.Row="0" Background="Transparent" ColumnDefinitions="*,Auto"
                   PointerPressed="TitleBar_PointerPressed">
                 <StackPanel Orientation="Horizontal" Margin="22,0,0,0" Spacing="10" VerticalAlignment="Center">
                     <Button Classes="link" Content="WEBSITE" Click="Website_Click" />
@@ -172,7 +188,7 @@
                     <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" />
                     <Button Classes="link" Content="PATCH NOTES" Click="PatchNotes_Click" />
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,12,0">
                     <Button Classes="chrome" Content="—" Click="Minimize_Click" ToolTip.Tip="Minimize" />
                     <Button Classes="chrome close" Content="✕" Click="Close_Click" ToolTip.Tip="Close" />
                 </StackPanel>
@@ -205,28 +221,90 @@
                                Foreground="#D8CCBA" />
                 </StackPanel>
 
-                <Button Grid.Column="1"
-                        VerticalAlignment="Top"
-                        Click="RealmCheckAgain_Click"
-                        ToolTip.Tip="{Binding RealmStatus}"
-                        Background="#B30A121B"
-                        BorderBrush="#40FFFFFF"
-                        CornerRadius="8"
-                        Padding="16,9">
-                    <StackPanel Orientation="Horizontal" Spacing="9">
-                        <TextBlock Text="Realm status" Foreground="#D8CCBA" FontWeight="Normal" VerticalAlignment="Center" />
-                        <Ellipse Width="9" Height="9" Fill="{Binding RealmStatusBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding RealmStatusText}" Foreground="{Binding RealmStatusBrush}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
+                <!-- Realm status, what's going on, what's new -->
+                <Grid Grid.Column="1" Width="360" Margin="0,0,0,12" RowDefinitions="Auto,Auto,*" RowSpacing="10">
+                    <Button Classes="inset"
+                            HorizontalAlignment="Right"
+                            Click="RealmCheckAgain_Click"
+                            ToolTip.Tip="{Binding RealmStatus}"
+                            Padding="16,9">
+                        <StackPanel Orientation="Horizontal" Spacing="9">
+                            <TextBlock Text="Realm status" Foreground="#D8CCBA" FontWeight="Normal" VerticalAlignment="Center" />
+                            <Ellipse Width="9" Height="9" Fill="{Binding RealmStatusBrush}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding RealmStatusText}" Foreground="{Binding RealmStatusBrush}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <views:DragonFrame Grid.Row="1" IsVisible="{Binding HasLiveInfo}" Ground="Marble" Padding="14,10">
+                        <StackPanel Spacing="5">
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasLivePlayers}">
+                                <Ellipse Width="7" Height="7" Fill="#3DDC84" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding LivePlayersText}" Foreground="#D8CCBA" FontSize="12" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasLiveRestart}">
+                                <Ellipse Width="7" Height="7" Fill="{Binding LiveRestartBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding LiveRestartText}" Foreground="{Binding LiveRestartBrush}" FontSize="12" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasLiveEvents}">
+                                <Ellipse Width="7" Height="7" Fill="#E8B64C" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding LiveEventsText}" Foreground="#D8CCBA" FontSize="12"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="310" />
+                            </StackPanel>
+                            <Button Classes="plain" Click="RareMap_Click" IsVisible="{Binding HasLiveRares}"
+                                    ToolTip.Tip="Open the rare map">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Ellipse Width="7" Height="7" Fill="#8FB8FF" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding LiveRaresText}" Foreground="#D8CCBA" FontSize="12" FontWeight="Normal"
+                                               TextTrimming="CharacterEllipsis" MaxWidth="310" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </views:DragonFrame>
+
+                    <views:DragonFrame Grid.Row="2" IsVisible="{Binding HasWhatsNew}" VerticalAlignment="Top" Ground="Marble" Padding="14,10">
+                        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+                            <TextBlock Text="{Binding WhatsNewTitle}" Foreground="#E8B64C" FontSize="11" FontWeight="Bold" LetterSpacing="1" />
+                            <TextBlock Grid.Row="1" Text="{Binding WhatsNewEmptyText}" IsVisible="{Binding !HasWhatsNewItems}"
+                                       Foreground="#AFA28D" FontSize="12" />
+                            <ScrollViewer Grid.Row="1" IsVisible="{Binding HasWhatsNewItems}" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding WhatsNewItems}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Spacing="8" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:WhatsNewItem">
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,0,6,0">
+                                                <Border Background="#1AFFFFFF" CornerRadius="3" Padding="5,1" VerticalAlignment="Top" Margin="0,1,0,0">
+                                                    <TextBlock Text="{Binding Tag}" Foreground="{Binding TagBrush}" FontSize="9" FontWeight="Bold" />
+                                                </Border>
+                                                <StackPanel Grid.Column="1" Spacing="1">
+                                                    <TextBlock Text="{Binding Headline}" Foreground="#F2E7D0" FontSize="12"
+                                                               TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding Detail}" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                               Foreground="#AFA28D" FontSize="11"
+                                                               TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10">
+                                <Button Classes="link" Content="ALL PATCH NOTES" Click="WhatsNew_Click" Padding="0" FontSize="11" />
+                                <TextBlock Text="{Binding WhatsNewMoreText}" Foreground="#8C8273" FontSize="11" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+                    </views:DragonFrame>
+                </Grid>
             </Grid>
 
             <!-- Status card, settings, enter realm -->
             <Grid Grid.Row="2" Margin="32,0,32,10" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="14">
                 <StackPanel VerticalAlignment="Bottom" Spacing="8">
                     <!-- Launcher update -->
-                    <Border IsVisible="{Binding IsUpdateAvailable}"
-                            Background="#D90A121B" BorderBrush="#66E8B64C" BorderThickness="1" CornerRadius="8" Padding="14,8">
+                    <views:DragonFrame IsVisible="{Binding IsUpdateAvailable}" Ground="Marble" Padding="14,8">
                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
                             <StackPanel VerticalAlignment="Center">
                                 <TextBlock Text="{Binding AvailableReleaseText}" Foreground="#F6D477" TextWrapping="Wrap" />
@@ -235,10 +313,27 @@
                             <Button Grid.Column="1" Content="UPDATE NOW" Click="UpdateNow_Click" IsVisible="{Binding IsUpdateReady}" Padding="12,6" />
                             <Button Grid.Column="2" Content="DETAILS" Click="ViewRelease_Click" Padding="12,6" />
                         </Grid>
-                    </Border>
+                    </views:DragonFrame>
 
-                    <Border Background="#D90A121B" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="8"
-                            Padding="18,14" MinHeight="96">
+                    <!-- The game crashed -->
+                    <views:DragonFrame IsVisible="{Binding HasCrashBanner}" Ground="Marble" Padding="14,8">
+                        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="10">
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="World of Warcraft crashed" Foreground="#F2B84B" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding CrashBannerSummary}" IsVisible="{Binding HasCrashBannerSummary}"
+                                           Foreground="#D8CCBA" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding CrashBannerDetail}" Foreground="#AFA28D" FontSize="11" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="SEND REPORT" Click="SendCrashReport_Click" IsVisible="{Binding CanSendCrashReport}" Padding="12,6" />
+                            <Button Grid.Column="2" Content="ALWAYS SEND" Click="AlwaysSendCrashReports_Click" IsVisible="{Binding CrashBannerOffersAlways}" Padding="12,6"
+                                    ToolTip.Tip="Send crash reports without asking from now on (Settings can turn it off)" />
+                            <Button Grid.Column="3" Content="REPAIR GAME" Click="RepairGame_Click" IsVisible="{Binding CrashBannerOffersRepair}"
+                                    IsEnabled="{Binding CanRepairGame}" Padding="12,6" />
+                            <Button Grid.Column="4" Classes="chrome" Width="32" Height="32" Content="✕" Click="DismissCrash_Click" ToolTip.Tip="Dismiss" />
+                        </Grid>
+                    </views:DragonFrame>
+
+                    <views:DragonFrame Ground="Marble" Padding="18,14" MinHeight="96">
                         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
                             <Border Width="44" Height="44" CornerRadius="22" BorderThickness="2"
                                     BorderBrush="{Binding CardIconBrush}" VerticalAlignment="Center">
@@ -276,13 +371,12 @@
                                         IsVisible="{Binding CardIsAttention}" Padding="16,9" />
                             </StackPanel>
                         </Grid>
-                    </Border>
+                    </views:DragonFrame>
                 </StackPanel>
 
-                <Button Grid.Column="1" Width="72" Height="96" VerticalAlignment="Bottom"
+                <Button Grid.Column="1" Classes="inset" Width="72" Height="96" VerticalAlignment="Bottom"
                         Click="Settings_Click" ToolTip.Tip="Settings: client, addons, sharing, account"
-                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                        Background="#D90A121B" BorderBrush="#66E8B64C">
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
                     <!-- Drawn rather than the ⚙ character, which each OS draws from a different font. -->
                     <Path Width="30" Height="30" Stretch="Uniform" Fill="#E8B64C"
                           Data="F0 M 19.84,9.60 L 22.37,10.36 L 22.37,13.64 L 19.84,14.40 L 19.24,15.85 L 20.49,18.17 L 18.17,20.49 L 15.85,19.24 L 14.40,19.84 L 13.64,22.37 L 10.36,22.37 L 9.60,19.84 L 8.15,19.24 L 5.83,20.49 L 3.51,18.17 L 4.76,15.85 L 4.16,14.40 L 1.63,13.64 L 1.63,10.36 L 4.16,9.60 L 4.76,8.15 L 3.51,5.83 L 5.83,3.51 L 8.15,4.76 L 9.60,4.16 L 10.36,1.63 L 13.64,1.63 L 14.40,4.16 L 15.85,4.76 L 18.17,3.51 L 20.49,5.83 L 19.24,8.15 Z M 15.40,12 A 3.4,3.4 0 1 0 8.60,12 A 3.4,3.4 0 1 0 15.40,12 Z" />
@@ -303,7 +397,7 @@
             </Grid>
 
             <!-- Footer -->
-            <Grid Grid.Row="3" Margin="34,0,34,8" ColumnDefinitions="*,Auto">
+            <Grid Grid.Row="3" Margin="34,0,34,12" ColumnDefinitions="*,Auto">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="{Binding FooterText}" Foreground="#8C8273" FontSize="11" VerticalAlignment="Center" />
                     <TextBlock Text="{Binding CombatLogStatus}" IsVisible="{Binding HasCombatLogStatus}"
@@ -316,19 +410,16 @@
         <!-- Login: the launcher is used with the player's game account -->
         <Grid Background="#E6040709" IsVisible="{Binding ShowLogin}">
             <Grid RowDefinitions="40,*">
-                <Grid Background="#66040709" ColumnDefinitions="*,Auto" PointerPressed="TitleBar_PointerPressed">
-                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Grid Background="Transparent" ColumnDefinitions="*,Auto" PointerPressed="TitleBar_PointerPressed">
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,12,0">
                         <Button Classes="chrome" Content="—" Click="Minimize_Click" ToolTip.Tip="Minimize" />
                         <Button Classes="chrome close" Content="✕" Click="Close_Click" ToolTip.Tip="Close" />
                     </StackPanel>
                 </Grid>
-                <Border Grid.Row="1" Width="420"
+                <views:DragonFrame Grid.Row="1" Width="420"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
-                        Background="#F20A121B"
-                        BorderBrush="#9A6B1E"
-                        BorderThickness="1"
-                        CornerRadius="10"
+                        Ground="Marble"
                         Padding="30,26">
                     <StackPanel Spacing="12">
                         <TextBlock Classes="serif" Text="{Binding LauncherTitle}" HorizontalAlignment="Center"
@@ -376,8 +467,9 @@
                                 HorizontalContentAlignment="Center"
                                 Padding="18,8" />
                     </StackPanel>
-                </Border>
+                </views:DragonFrame>
             </Grid>
         </Grid>
+
     </Grid>
 </Window>

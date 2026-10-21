@@ -144,6 +144,7 @@ public sealed partial class MainViewModel
         _patchTorrents.Clear();
         _sessionStore.Clear();
         ForgetCombatLogOffer();
+        ForgetCrashReportOffer();
         ForgetShop();
         NotifyLoginChanged();
         await ConfigureSharingAsync();
@@ -178,6 +179,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(AccountSummary));
         OnPropertyChanged(nameof(RememberedAccountName));
         OnPropertyChanged(nameof(CombatLogSharingOffered));
+        OnPropertyChanged(nameof(CrashReportsOffered));
         OnPropertyChanged(nameof(ShopAvailable));
         NotifyInstallChanged();
         UpdateLaunchReadinessStatus();
@@ -217,10 +219,11 @@ public sealed partial class MainViewModel
     /// Downloads the realm's client into its target folder. Files already there are kept when they pass
     /// the torrent's checksums, so only what differs is downloaded; files the realm doesn't ship (and
     /// client files longer than the realm's) are deleted first. Addons, settings, Logs and Screenshots
-    /// are never touched; Cache is cleared when files change.
+    /// are never touched; Cache is cleared when files change. True when the client ended up complete.
     /// </summary>
-    private async Task DownloadClientAsync(LauncherSession session, string? folder, bool repair)
+    private async Task<bool> DownloadClientAsync(LauncherSession session, string? folder, bool repair)
     {
+        var done = false;
         _isInstallingClient = true;
         _isRepairingClient = repair;
         _installCancel = new CancellationTokenSource();
@@ -300,6 +303,7 @@ public sealed partial class MainViewModel
             SetClientDirectory(target);
             if (!ClientValid)
                 throw new InvalidDataException("The downloaded client didn't pass validation: " + ClientStatus);
+            done = true;
             await RediscoverRealmConfigurationAsync(); // also installs the realm's required patches and addons
         }
         catch (OperationCanceledException)
@@ -321,6 +325,7 @@ public sealed partial class MainViewModel
             NotifyInstallChanged();
             _ = RefreshSharingAsync();
         }
+        return done;
     }
 
     private static bool SameDirectory(string a, string b)
@@ -355,6 +360,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(IsSyncingRequired));
         OnPropertyChanged(nameof(CanEnterRealm));
         OnPropertyChanged(nameof(EnterRealmButtonText));
+        NotifyRepairChanged();
         NotifyHome();
     }
 
@@ -430,8 +436,21 @@ public sealed partial class MainViewModel
 
     private async Task SyncRequiredAndShareAsync()
     {
+        _syncRuns++;
+        NotifyRepairChanged();
+        try { await SyncRequiredAndShareCoreAsync(); }
+        finally
+        {
+            _syncRuns--;
+            NotifyRepairChanged();
+        }
+    }
+
+    private async Task SyncRequiredAndShareCoreAsync()
+    {
         // By itself: combat logs never wait for patches, and patches never wait for an upload.
         _ = StartCombatLogSharingAsync();
+        _ = RefreshCrashReportOfferAsync();
         _ = ProbeShopAsync();
         await ClearCacheIfRealmAsksAsync();
         // The client has to load the realm's patch names before any patch is moved to one: with a
@@ -1012,7 +1031,12 @@ public sealed partial class MainViewModel
     }
 
     /// <summary>Stops every transfer and saves resume data; called as Portalkeeper closes.</summary>
-    public Task ShutdownAsync() => Task.WhenAll(StopCombatLogUploadAsync(), _torrents.ShutdownAsync());
+    public Task ShutdownAsync()
+    {
+        // A client check holds the torrent engine for minutes: stop it rather than wait for it.
+        CancelClientInstall();
+        return Task.WhenAll(StopCombatLogUploadAsync(), _torrents.ShutdownAsync());
+    }
 
     // ---------------------------------------------------------
     // Formatting
@@ -1020,6 +1044,7 @@ public sealed partial class MainViewModel
 
     private static string DescribeDownload(string what, TorrentProgress p)
     {
+        if (p.Checking) return $"Checking your files against the realm's: {p.Percent:F0}% of {FormatSize(p.TotalBytes)}";
         var text = $"{what}: {p.Percent:F1}% · {FormatSize(p.DoneBytes)} of {FormatSize(p.TotalBytes)} · {FormatRate(p.DownloadRate)}";
         if (p.DownloadRate > 0 && p.TotalBytes > p.DoneBytes)
         {

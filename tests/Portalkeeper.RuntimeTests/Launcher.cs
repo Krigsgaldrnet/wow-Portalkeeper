@@ -293,6 +293,9 @@ internal static partial class Program
 
             // The coin shop.
             await ShopChecks(Check);
+
+            // Crash reports and the home screen's live info and patch notes.
+            await HomeAndCrashChecks(root, Check);
         }
         catch (Exception ex)
         {
@@ -454,6 +457,32 @@ internal static partial class Program
                     File.ReadAllBytes(f).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(client, Path.GetRelativePath(shipped, f))))));
             check($"only what differs is downloaded ({served:N0} of {total:N0} bytes)", served > 0 && served <= 64 * 1024 + 2 * 16 * 1024);
             check("the realm's web seed shows up in the download status", webSeeds == 1);
+
+            // REPAIR GAME: a file damaged without its size or time changing passes the saved resume
+            // data; only a check that forgets that data finds the damage and downloads the piece again.
+            // The client is being shared (still in the engine), as it is in the launcher.
+            await torrents.ConfigureAsync(share: true, uploadBytesPerSecond: 0, port: 0);
+            await torrents.DownloadAsync(torrent, client, keepSharing: true, null, timeout.Token);
+            var mpq = Path.Combine(client, "Data", "common.MPQ");
+            var written = File.GetLastWriteTimeUtc(mpq);
+            var damaged = File.ReadAllBytes(mpq);
+            damaged[200_000] ^= 0xFF;
+            File.WriteAllBytes(mpq, damaged);
+            File.SetLastWriteTimeUtc(mpq, written);
+            var servedBefore = Interlocked.Read(ref served);
+            await torrents.DownloadAsync(torrent, client, keepSharing: true, null, timeout.Token);
+            check("an ordinary check trusts the shared copy (the damage stays)",
+                File.ReadAllBytes(mpq)[200_000] == damaged[200_000] && Interlocked.Read(ref served) == servedBefore);
+            await torrents.ForgetResumeAsync(torrent);
+            var checking = new List<double>();
+            await torrents.DownloadAsync(torrent, client, keepSharing: false,
+                new SyncProgress<TorrentProgress>(p => { if (p.Checking) lock (checking) checking.Add(p.Percent); }), timeout.Token);
+            var original = File.ReadAllBytes(Path.Combine(shipped, "Data", "common.MPQ"));
+            check("after ForgetResumeAsync every file is hash-checked and the damaged piece downloaded again",
+                File.ReadAllBytes(mpq).AsSpan().SequenceEqual(original)
+                && Interlocked.Read(ref served) - servedBefore is > 0 and <= 2 * 16 * 1024);
+            check($"the check reports its progress ({checking.Count} reports, last {checking.LastOrDefault():F0}%)",
+                checking.Count > 1 && checking.Last() >= 99);
         }
         catch (Exception ex) { check("installing over another client: " + ex.Message, false); }
         finally

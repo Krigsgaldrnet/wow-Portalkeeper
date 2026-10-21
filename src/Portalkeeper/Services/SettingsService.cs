@@ -85,6 +85,10 @@ public sealed class PortalkeeperSettings
     public bool CombatLogSetAsidePending { get; set; }
     // When the portal last confirmed a combat log, shown under the option.
     public DateTimeOffset? CombatLogLastSent { get; set; }
+    // Send the game's crash reports to the realm without asking (CrashReportService).
+    public bool SendCrashReports { get; set; }
+    // The last ENTER REALM: the home screen's patch notes are the ones merged since.
+    public DateTimeOffset? LastPlayedUtc { get; set; }
     // A client install that was paused or interrupted, resumed by INSTALL WOW.
     public string? PendingClientInstallPath { get; set; }
     // Installed Windows builds download and run new releases by themselves.

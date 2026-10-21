@@ -576,6 +576,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         LaunchStatus = "Preparing client...";
 
         RealmLaunchResult? result = null;
+        var launchedAt = DateTimeOffset.UtcNow;
 
         try
         {
@@ -596,11 +597,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             var unsatisfied = currentAddons.Where(a => a.Definition.Required && (!a.IsInstalled || a.IsUpdateAvailable)).ToArray();
             if (unsatisfied.Length > 0) throw new InvalidOperationException("Required addons need attention: " + string.Join(", ", unsatisfied.Select(a => a.Definition.Name)));
             PrepareCombatLogsForLaunch();
+            DismissCrash();
+            SetRepairStatus("");
+            launchedAt = DateTimeOffset.UtcNow;
             result = _realmLaunchService.PrepareAndLaunch(
                 EffectiveClientPath,
                 _realmInfo, ClientPath, AccountName, GamePasswordForLaunch(_realmInfo));
 
             IsGameRunning = true;
+            RememberPlayed(launchedAt);
             await PauseSharingForGameAsync();
             IsLaunching = false;
             LaunchStatus =
@@ -631,6 +636,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             {
                 _ = ResumeSharingAfterGameAsync();
                 _ = UploadCombatLogsAsync(afterGame: true);
+                _ = CheckForCrashAsync(launchedAt);
+                _ = RefreshHomeInfoAsync(whatsNew: true);
             }
         }
     }
@@ -689,6 +696,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         while (await timer.WaitForNextTickAsync())
         {
             await RefreshRealmHealthAsync();
+            _ = RefreshHomeInfoOnTickAsync();
             // A shop that couldn't be asked at login (the world server restarting) is asked again
             // once the world is back, every few minutes; once the portal has answered, never.
             if (_realmHealthState is RealmHealthState.Online or RealmHealthState.WorldOnly)
@@ -778,6 +786,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         {
             await StopOptionalAddonUpdatesAsync();
             await LoadRealmConfigurationAsync(selectedPath);
+            _ = RefreshHomeInfoAsync(whatsNew: true);
             await Task.WhenAll(RefreshRealmHealthAsync(), LoadAddonsAsync());
         }
         finally
@@ -878,10 +887,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(NewsAvailable));
         OnPropertyChanged(nameof(ArmoryAvailable));
         OnPropertyChanged(nameof(CombatLogSharingOffered));
+        OnPropertyChanged(nameof(CrashReportsOffered));
         OnPropertyChanged(nameof(ShopAvailable));
         OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
         UpdateLaunchReadinessStatus();
         NotifyHome();
+        NotifyHomeInfo();
     }
 
     // ---------------------------------------------------------
