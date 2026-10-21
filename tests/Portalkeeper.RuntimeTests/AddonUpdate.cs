@@ -52,6 +52,59 @@ internal static partial class Program
         Directory.CreateDirectory(addOn);
         File.WriteAllText(Path.Combine(addOn, "DBM-Core.toc"), "## Version: 5.0\n");
         check("a folder put back by hand after uninstalling isn't the launcher's", !Inspect(Addon("6.0")).InstalledByLauncher);
+
+        // GitHub addons: an unchanged commit is confirmed from git's ref listing, not GitHub's API,
+        // whose 60 calls an hour per address the launcher's self-update needs too.
+        var github = new FixtureGitHub();
+        var source = new GitHubAddonSourceService(new HttpClient(github), Path.Combine(root, "github-cache"));
+        var dbm = new AddonDefinition { Id = "dbm", Name = "DBM", GitUrl = "https://github.com/owner/DBM-Core" };
+        var first = await source.ResolveAsync(dbm);
+        check("a new GitHub addon is resolved through the API", first.Version == "1.0" && github.ApiCalls > 0);
+        github.ApiCalls = 0;
+        var again = await source.ResolveAsync(dbm);
+        check("an unchanged GitHub addon makes no API calls", again.Version == "1.0" && github.ApiCalls == 0 && github.RefListings > 0);
+        github.Commit = new string('b', 40);
+        github.Version = "2.0";
+        var changed = await source.ResolveAsync(dbm);
+        check("a changed GitHub addon is resolved again", changed.Version == "2.0" && github.ApiCalls > 0);
+    }
+
+    // A one-repository GitHub: API, raw files and git's ref listing for owner/DBM-Core at Commit.
+    private sealed class FixtureGitHub : HttpMessageHandler
+    {
+        public string Commit = new('a', 40);
+        public string Version = "1.0";
+        public int ApiCalls, RefListings;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var uri = request.RequestUri!;
+            string body;
+            if (uri.Host == "api.github.com")
+            {
+                ApiCalls++;
+                body = uri.AbsolutePath switch
+                {
+                    "/repos/owner/DBM-Core" => """{"default_branch":"main"}""",
+                    "/repos/owner/DBM-Core/commits/main" => "{\"sha\":\"" + Commit + "\",\"commit\":{\"tree\":{\"sha\":\"tree-" + Commit + "\"}}}",
+                    _ when uri.AbsolutePath == "/repos/owner/DBM-Core/git/trees/tree-" + Commit =>
+                        """{"truncated":false,"tree":[{"path":"DBM-Core.toc","type":"blob"}]}""",
+                    _ => ""
+                };
+            }
+            else if (uri.Host == "raw.githubusercontent.com" && uri.AbsolutePath == $"/owner/DBM-Core/{Commit}/DBM-Core.toc")
+                body = "## Version: " + Version + "\n";
+            else if (uri.Host == "github.com" && uri.AbsolutePath == "/owner/DBM-Core.git/info/refs")
+            {
+                RefListings++;
+                body = $"001e# service=git-upload-pack\n0000{Commit} HEAD\0symref=HEAD:refs/heads/main\n{Commit} refs/heads/main\n0000";
+            }
+            else
+                body = "";
+            return Task.FromResult(body.Length == 0
+                ? new HttpResponseMessage(System.Net.HttpStatusCode.NotFound)
+                : new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(body) });
+        }
     }
 
     // addon-<version> is a zip of DBM-Core with that version; slow never finishes.

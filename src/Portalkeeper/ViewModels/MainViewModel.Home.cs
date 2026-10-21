@@ -35,12 +35,13 @@ public sealed partial class MainViewModel
         _isInstallingClient ? HomeCard.Installing
         : !ClientValid || _clientCheck == ClientCheck.NotRealmClient ? HomeCard.NoClient
         : IsGameRunning || IsLaunching ? HomeCard.Playing
-        : _isInstallingRequired ? HomeCard.Syncing
+        : _isInstallingRequired || IsCheckingAddons ? HomeCard.Syncing
         : CanEnterRealm ? HomeCard.Ready
         : HomeCard.Attention;
 
     public bool CardIsNoClient => Card == HomeCard.NoClient;
     public bool CardIsInstalling => Card == HomeCard.Installing;
+    public bool CardIsSyncing => Card == HomeCard.Syncing;
     public bool CardIsReady => Card == HomeCard.Ready;
     public bool CardIsAttention => Card == HomeCard.Attention;
     public bool CardShowsBusy => Card is HomeCard.Installing or HomeCard.Syncing;
@@ -67,7 +68,7 @@ public sealed partial class MainViewModel
             : _isRepairingClient ? "Updating World of Warcraft" : "Downloading World of Warcraft",
         HomeCard.NoClient => HasPendingClientInstall ? "Your install is paused"
             : ClientValid ? "Update your client to " + RealmBranding.LauncherName : "Install World of Warcraft",
-        HomeCard.Syncing => "Updating realm files",
+        HomeCard.Syncing => _isInstallingRequired ? "Updating realm files" : "Checking realm files",
         HomeCard.Playing => "World of Warcraft is running",
         HomeCard.Ready => "Your game is up to date",
         _ => "Needs attention"
@@ -88,7 +89,7 @@ public sealed partial class MainViewModel
     {
         HomeCard.Ready => "Game is up to date",
         HomeCard.Playing => "Have fun out there",
-        HomeCard.Syncing => "Updating realm files...",
+        HomeCard.Syncing => _isInstallingRequired ? "Updating realm files..." : "Checking realm files...",
         HomeCard.Installing => "Downloading...",
         HomeCard.NoClient => "Install the game first",
         _ => "Not ready yet"
@@ -113,6 +114,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(Card));
         OnPropertyChanged(nameof(CardIsNoClient));
         OnPropertyChanged(nameof(CardIsInstalling));
+        OnPropertyChanged(nameof(CardIsSyncing));
         OnPropertyChanged(nameof(CardIsReady));
         OnPropertyChanged(nameof(CardIsAttention));
         OnPropertyChanged(nameof(CardShowsBusy));

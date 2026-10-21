@@ -243,11 +243,21 @@ internal static partial class Program
             string ReleaseJson(string? digest) => "{\"draft\":false,\"prerelease\":false,\"assets\":[{\"name\":\"Portalkeeper-Setup-9.9.9.exe\",\"size\":"
                 + payload.Length + (digest is null ? "" : ",\"digest\":\"" + digest + "\"") + "}]}";
             var downloads = 0;
+            var apiCalls = 0;
             byte[] served = payload;
+            string? checksumFile = null; // the release's .sha256 asset; null = an older release without one
             var updates = Path.Combine(root, "updates");
             PortalkeeperUpdateService Updater(string? digest) => new(
-                new HttpClient(new FakeHandler(_ => new System.Net.Http.StringContent(ReleaseJson(digest)))),
-                new HttpClient(new FakeHandler(_ => { downloads++; return new System.Net.Http.ByteArrayContent(served); })),
+                new HttpClient(new FakeHandler(_ => { apiCalls++; return new System.Net.Http.StringContent(ReleaseJson(digest)); })),
+                new HttpClient(new FakeHandler(request =>
+                {
+                    if (!request.RequestUri!.AbsolutePath.EndsWith(".sha256", StringComparison.Ordinal))
+                    {
+                        downloads++;
+                        return new System.Net.Http.ByteArrayContent(served);
+                    }
+                    return checksumFile is null ? null : new System.Net.Http.StringContent(checksumFile);
+                })),
                 updates);
             var installer = await Updater("sha256:" + payloadHash).DownloadInstallerAsync("v9.9.9");
             Check("verified installer is kept", File.ReadAllBytes(installer).SequenceEqual(payload) && Path.GetFileName(installer) == "Portalkeeper-Setup-9.9.9.exe");
@@ -260,6 +270,22 @@ internal static partial class Program
             Check("nothing is left behind after a refused download", !Directory.EnumerateFiles(updates).Any());
             Check("a release without a checksum is refused", await ThrowsAsync(() => Updater(null).DownloadInstallerAsync("v9.9.9")));
             Check("a non-release tag is refused", await ThrowsAsync(() => Updater("sha256:" + payloadHash).DownloadInstallerAsync("main")));
+
+            // A release's .sha256 file is used before GitHub's API, whose hourly limit addon checks can use up.
+            served = payload;
+            checksumFile = payloadHash.ToUpperInvariant() + "  Portalkeeper-Setup-9.9.9.exe\n";
+            apiCalls = 0;
+            installer = await Updater(null).DownloadInstallerAsync("v9.9.9");
+            Check("the release's checksum file verifies the installer without the API",
+                File.ReadAllBytes(installer).SequenceEqual(payload) && apiCalls == 0);
+            File.Delete(installer);
+            served = (byte[])payload.Clone();
+            served[10] ^= 0xFF;
+            Check("the checksum file refuses a tampered installer", await ThrowsAsync(() => Updater(null).DownloadInstallerAsync("v9.9.9")));
+            checksumFile = "not a checksum";
+            Check("a malformed checksum file is refused", await ThrowsAsync(() => Updater("sha256:" + payloadHash).DownloadInstallerAsync("v9.9.9")));
+            Check("nothing is left behind after the checksum file refusals", !Directory.EnumerateFiles(updates).Any());
+            checksumFile = null;
             Check("this test build can't update itself in place", !PortalkeeperUpdateService.CanUpdateInPlace);
 
             // Release checks ask the portal first; GitHub only when the portal can't say.
@@ -317,10 +343,13 @@ internal static partial class Program
         catch (Exception) { return true; }
     }
 
-    private sealed class FakeHandler(Func<HttpRequestMessage, HttpContent> respond) : HttpMessageHandler
+    /// <summary>Answers with <paramref name="respond"/>'s content, or 404 when it returns null.</summary>
+    private sealed class FakeHandler(Func<HttpRequestMessage, HttpContent?> respond) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = respond(request) });
+            Task.FromResult(respond(request) is { } content
+                ? new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = content }
+                : new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
     }
 
     /// <summary>A private multi-file torrent of <paramref name="folder"/>, named after it.</summary>

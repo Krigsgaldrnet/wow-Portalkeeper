@@ -185,6 +185,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(AddonStatusSymbol));
             OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
+            NotifyHome();
         }
     }
 
