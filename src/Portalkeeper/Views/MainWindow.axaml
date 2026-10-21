@@ -126,28 +126,27 @@
     </Window.Styles>
 
     <Grid>
-        <!-- Background: a still scene for now. Drop Assets/Branding/background.jpg in to replace it. -->
-        <Border>
+        <!-- Background: DragonUI's rock ground (as in Settings) lit warm behind the logo and the
+             ENTER REALM button, so the scene matches the bronze frame. Drop Assets/Branding/background.jpg
+             in to replace it. -->
+        <Border Background="#16110D">
             <Border.Background>
-                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
-                    <GradientStop Offset="0" Color="#0F2230" />
-                    <GradientStop Offset="0.55" Color="#081119" />
-                    <GradientStop Offset="1" Color="#04070B" />
-                </LinearGradientBrush>
+                <ImageBrush Source="/Assets/DragonUI/ground-rock.png" TileMode="Tile" Stretch="Fill"
+                            DestinationRect="0,0,256,256" />
             </Border.Background>
         </Border>
         <Border>
             <Border.Background>
-                <RadialGradientBrush Center="22%,30%" GradientOrigin="22%,30%" RadiusX="55%" RadiusY="70%">
-                    <GradientStop Offset="0" Color="#552C6E86" />
-                    <GradientStop Offset="1" Color="#002C6E86" />
+                <RadialGradientBrush Center="24%,24%" GradientOrigin="24%,24%" RadiusX="55%" RadiusY="65%">
+                    <GradientStop Offset="0" Color="#38C8912C" />
+                    <GradientStop Offset="1" Color="#00C8912C" />
                 </RadialGradientBrush>
             </Border.Background>
         </Border>
         <Border>
             <Border.Background>
                 <RadialGradientBrush Center="82%,85%" GradientOrigin="82%,85%" RadiusX="50%" RadiusY="60%">
-                    <GradientStop Offset="0" Color="#33C8912C" />
+                    <GradientStop Offset="0" Color="#26C8912C" />
                     <GradientStop Offset="1" Color="#00C8912C" />
                 </RadialGradientBrush>
             </Border.Background>
@@ -222,7 +221,7 @@
                 </StackPanel>
 
                 <!-- Realm status, what's going on, what's new -->
-                <Grid Grid.Column="1" Width="360" Margin="0,0,0,12" RowDefinitions="Auto,Auto,*" RowSpacing="10">
+                <Grid Grid.Column="1" Width="400" Margin="0,0,0,12" RowDefinitions="Auto,Auto,*" RowSpacing="10">
                     <Button Classes="inset"
                             HorizontalAlignment="Right"
                             Click="RealmCheckAgain_Click"
@@ -235,8 +234,8 @@
                         </StackPanel>
                     </Button>
 
-                    <views:DragonFrame Grid.Row="1" IsVisible="{Binding HasLiveInfo}" Ground="Marble" Padding="14,10">
-                        <StackPanel Spacing="5">
+                    <views:DragonFrame Grid.Row="1" IsVisible="{Binding HasLiveInfo}" Ground="Marble" Padding="18,12">
+                        <StackPanel Spacing="6">
                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasLivePlayers}">
                                 <Ellipse Width="7" Height="7" Fill="#3DDC84" VerticalAlignment="Center" />
                                 <TextBlock Text="{Binding LivePlayersText}" Foreground="#D8CCBA" FontSize="12" />
@@ -260,8 +259,8 @@
                         </StackPanel>
                     </views:DragonFrame>
 
-                    <views:DragonFrame Grid.Row="2" IsVisible="{Binding HasWhatsNew}" VerticalAlignment="Top" Ground="Marble" Padding="14,10">
-                        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+                    <views:DragonFrame Grid.Row="2" IsVisible="{Binding HasWhatsNew}" VerticalAlignment="Top" Ground="Marble" Padding="18,14">
+                        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12">
                             <TextBlock Text="{Binding WhatsNewTitle}" Foreground="#E8B64C" FontSize="11" FontWeight="Bold" LetterSpacing="1" />
                             <TextBlock Grid.Row="1" Text="{Binding WhatsNewEmptyText}" IsVisible="{Binding !HasWhatsNewItems}"
                                        Foreground="#AFA28D" FontSize="12" />
@@ -269,20 +268,20 @@
                                 <ItemsControl ItemsSource="{Binding WhatsNewItems}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
-                                            <StackPanel Spacing="8" />
+                                            <StackPanel Spacing="14" />
                                         </ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:WhatsNewItem">
                                             <!-- The tag sits above the text so every headline starts at the same edge;
                                                  the right margin keeps the text clear of the scroll bar. -->
-                                            <StackPanel Spacing="1" Margin="0,0,14,0">
+                                            <StackPanel Spacing="3" Margin="0,0,16,0">
                                                 <TextBlock Text="{Binding Tag}" Foreground="{Binding TagBrush}" FontSize="9" FontWeight="Bold" LetterSpacing="0.5" />
-                                                <TextBlock Text="{Binding Headline}" Foreground="#F2E7D0" FontSize="12"
+                                                <TextBlock Text="{Binding Headline}" Foreground="#F2E7D0" FontSize="12" LineHeight="17"
                                                            TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Text="{Binding Detail}" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}"
                                                            Foreground="#AFA28D" FontSize="11"
-                                                           TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                                           MaxLines="1" TextTrimming="CharacterEllipsis" />
                                             </StackPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
