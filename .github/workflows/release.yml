@@ -109,6 +109,14 @@ jobs:
           name: Portalkeeper-Linux
           path: release-assets
 
+      # Launchers check the installer against this file: release downloads aren't counted against
+      # GitHub's API limit, which a network of launchers checking addons can use up.
+      - name: Write installer checksums
+        run: |
+          cd release-assets
+          for f in Portalkeeper-Setup-*.exe; do sha256sum "$f" > "$f.sha256"; done
+          cat Portalkeeper-Setup-*.exe.sha256
+
       - name: Show release files
         run: ls -lh release-assets
 
@@ -121,6 +129,7 @@ jobs:
           gh release create "$TAG" \
             release-assets/Portalkeeper-*-win-x64.zip \
             release-assets/Portalkeeper-Setup-*.exe \
+            release-assets/Portalkeeper-Setup-*.exe.sha256 \
             release-assets/Portalkeeper-*-linux-x64.zip \
             --title "Portalkeeper $TAG" \
             --generate-notes \

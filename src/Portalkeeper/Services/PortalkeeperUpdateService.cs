@@ -12,8 +12,9 @@ namespace Portalkeeper.Services;
 
 /// <summary>
 /// Updates an installed Windows Portalkeeper by itself (Evermore fork): downloads the new release's
-/// Setup exe from this fork's GitHub releases, checks it against the SHA-256 digest GitHub publishes
-/// for the asset, and runs it silently once Portalkeeper has closed. The installer reopens Portalkeeper.
+/// Setup exe from this fork's GitHub releases, checks it against the release's SHA-256 (the
+/// .sha256 file the release workflow uploads beside it, or else the digest GitHub's API reports for
+/// the asset), and runs it silently once Portalkeeper has closed. The installer reopens Portalkeeper.
 ///
 /// Portable zips and Linux builds aren't updated in place; they keep the "update available" notice.
 /// </summary>
@@ -52,22 +53,27 @@ public sealed class PortalkeeperUpdateService
         if (!PortalkeeperReleaseService.TryStableTag(tag, out var version))
             throw new InvalidDataException("Not a stable release tag.");
         var name = InstallerName(version);
-        var (digest, size) = await PublishedDigestAsync(tag, name, cancellationToken);
+        // The URLs are built from the fixed repository and the validated tag, never taken from a response.
+        var url = $"https://github.com/{Repository}/releases/download/{Uri.EscapeDataString(tag)}/{name}";
+        // Release downloads aren't counted against GitHub's API limit (60 calls an hour per address),
+        // which addon checks on the same network can use up; releases before 0.5.23 have no .sha256 file.
+        var (digest, size) = await PublishedChecksumAsync(url + ".sha256", cancellationToken) is { } published
+            ? (published, (long?)null)
+            : await PublishedDigestAsync(tag, name, cancellationToken);
 
         Directory.CreateDirectory(_directory);
         var target = Path.Combine(_directory, name);
         if (File.Exists(target) && await HashAsync(target, cancellationToken) == digest)
             return target;
 
-        // The URL is built from the fixed repository and the validated tag, never taken from the response.
-        var url = $"https://github.com/{Repository}/releases/download/{Uri.EscapeDataString(tag)}/{name}";
         var temp = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             using (var response = await _download.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
             {
                 response.EnsureSuccessStatusCode();
-                if (response.Content.Headers.ContentLength is { } length && length != size)
+                var limit = size ?? MaximumInstallerBytes;
+                if (response.Content.Headers.ContentLength is { } length && (size is null ? length > limit : length != size))
                     throw new InvalidDataException("The installer download has an unexpected size.");
                 await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
                 await using var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None);
@@ -77,7 +83,7 @@ public sealed class PortalkeeperUpdateService
                 while ((read = await input.ReadAsync(buffer, cancellationToken)) > 0)
                 {
                     total += read;
-                    if (total > size) throw new InvalidDataException("The installer download is larger than published.");
+                    if (total > limit) throw new InvalidDataException("The installer download is larger than published.");
                     await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 }
             }
@@ -105,7 +111,24 @@ public sealed class PortalkeeperUpdateService
         });
     }
 
-    private async Task<(string Digest, long Size)> PublishedDigestAsync(string tag, string name, CancellationToken cancellationToken)
+    /// <summary>
+    /// Reads a sha256sum-style checksum file ("hash  name") from the release, or returns null when the
+    /// release has none.
+    /// </summary>
+    private async Task<string?> PublishedChecksumAsync(string url, CancellationToken cancellationToken)
+    {
+        using var response = await _download.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode) return null;
+        if (response.Content.Headers.ContentLength > 1024)
+            throw new InvalidDataException("The release's installer checksum file is too large.");
+        var text = await response.Content.ReadAsStringAsync(cancellationToken);
+        var hash = text.Length is >= 64 and <= 1024 ? text[..64] : "";
+        if (!hash.All(Uri.IsHexDigit) || hash.Length != 64 || (text.Length > 64 && !char.IsWhiteSpace(text[64])))
+            throw new InvalidDataException("The release's installer checksum file isn't a SHA-256.");
+        return hash.ToLowerInvariant();
+    }
+
+    private async Task<(string Digest, long? Size)> PublishedDigestAsync(string tag, string name, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{Repository}/releases/tags/{Uri.EscapeDataString(tag)}");

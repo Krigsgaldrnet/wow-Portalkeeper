@@ -88,6 +88,24 @@ public sealed class GitHubAddonSourceService
 
         try
         {
+            // Evermore fork: git's ref listing isn't counted against GitHub's API limit (60 calls an hour
+            // per address, shared by every launcher behind it and by the self-update), and an unchanged
+            // commit needs nothing more, so routine checks make no API calls at all.
+            if (cached is not null &&
+                !string.IsNullOrWhiteSpace(cached.Folder) &&
+                !string.IsNullOrWhiteSpace(cached.Version))
+            {
+                GitHeadInfo? head = null;
+                try { head = await GetGitHeadAsync(owner, repository, addon.Ref); }
+                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException) { }
+
+                if (head is not null && cached.Commit.Equals(head.Commit, StringComparison.OrdinalIgnoreCase))
+                {
+                    return BuildResolvedDefinition(addon, repository, head.Branch, head.Commit,
+                        cached.AddonPath, cached.Folder, cached.Version);
+                }
+            }
+
             try
             {
                 return await ResolveUsingApiAsync(addon, owner, repository, cacheKey, cached);
