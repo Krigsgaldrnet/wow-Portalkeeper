@@ -191,7 +191,7 @@ A realm configuration describes which client patch files that realm requires (`[
 
 Do not assume patch files are identical across realms.
 
-Do not distribute Blizzard-owned assets as part of Portalkeeper.
+Do not distribute Blizzard-owned assets as part of Portalkeeper (in the release package; the client torrent described above is the exception).
 
 Prefer validation and management of files already legitimately available to the user or supplied by the realm (the realm's own patches and, in this fork, the hash-verified client torrent).
 
