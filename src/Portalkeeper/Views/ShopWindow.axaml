@@ -144,6 +144,25 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="10,6" />
         </Style>
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#1A140E" />
+            <Setter Property="Foreground" Value="#E9DFC9" />
+            <Setter Property="BorderBrush" Value="#765522" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,6" />
+        </Style>
+        <!-- CLEAR next to the search: a quiet text link -->
+        <Style Selector="Button.clear">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="Foreground" Value="#AFA28D" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.clear:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#FFE9A8" />
+        </Style>
 
         <Style Selector="Border.card">
             <Setter Property="Background" Value="#E61A140E" />
@@ -190,7 +209,7 @@
         <!-- DragonUI: a rock ground in a bronze frame -->
         <views:DragonFrame Kind="Bronze" Ground="Rock" Scale="1.6" IsHitTestVisible="False" />
         <views:DragonTitleBar Title="{Binding $parent[Window].Title}" />
-        <Grid RowDefinitions="Auto,Auto,*,Auto" IsEnabled="{Binding !IsConfirming}" Margin="16,48,16,16">
+        <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" IsEnabled="{Binding !IsConfirming}" Margin="16,48,16,16">
 
             <!-- Header: title and wallet -->
             <Border Grid.Row="0" BorderBrush="#9A6D25" BorderThickness="0,0,0,2" Padding="30,18">
@@ -272,8 +291,36 @@
                 </StackPanel>
             </Grid>
 
+            <!-- Search, sort and show: narrow the tab and order its tiles -->
+            <Grid Grid.Row="2" Margin="22,8,24,0" ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="10" IsVisible="{Binding ShowShop}">
+                <TextBox Grid.Column="0" Width="240" Watermark="Search this tab..." Text="{Binding SearchText}"
+                         VerticalAlignment="Center" />
+                <Button Grid.Column="1" Classes="clear plain" Content="CLEAR" Click="ClearFilters_Click" IsVisible="{Binding IsFiltered}"
+                        VerticalAlignment="Center" ToolTip.Tip="Show everything in this tab again" />
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="Show" Foreground="#AFA28D" VerticalAlignment="Center" />
+                    <ComboBox ItemsSource="{Binding Shows}" SelectedItem="{Binding SelectedShow}" MinWidth="150">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ShopShowView">
+                                <TextBlock Text="{Binding Title}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="Sort" Foreground="#AFA28D" VerticalAlignment="Center" />
+                    <ComboBox ItemsSource="{Binding Sorts}" SelectedItem="{Binding SelectedSort}" MinWidth="180">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ShopSortView">
+                                <TextBlock Text="{Binding Title}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+            </Grid>
+
             <!-- Offers -->
-            <Grid Grid.Row="2" Margin="0,8,0,0">
+            <Grid Grid.Row="3" Margin="0,8,0,0">
                 <!-- Like the retail game's shop: tiles on the left, the picked one large on a stage on the right. -->
                 <Grid IsVisible="{Binding ShowShop}" ColumnDefinitions="Auto,*" Margin="22,6,22,16" ColumnSpacing="14">
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled" Width="{Binding $parent[Window].Bounds.Width, Converter={x:Static views:ShopWindow.TileColumnWidth}}">
@@ -282,8 +329,8 @@
                                 <TextBlock Text="This account has no characters yet. Make one in the game, then come back to buy something for it."
                                            Foreground="#D8CCBA" TextWrapping="Wrap" />
                             </Border>
-                            <TextBlock IsVisible="{Binding HasNoOffers}" Text="Nothing is for sale right now."
-                                       Foreground="#AFA28D" Margin="4,10" />
+                            <TextBlock IsVisible="{Binding HasNoOffers}" Text="{Binding NoOffersText}"
+                                       Foreground="#AFA28D" Margin="4,10" TextWrapping="Wrap" />
                             <ItemsControl ItemsSource="{Binding Offers}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -444,7 +491,7 @@
             </Grid>
 
             <!-- Status line: what the last purchase did -->
-            <Border Grid.Row="3" Background="Transparent" BorderBrush="#33FFFFFF" BorderThickness="0,1,0,0" Padding="24,10"
+            <Border Grid.Row="4" Background="Transparent" BorderBrush="#33FFFFFF" BorderThickness="0,1,0,0" Padding="24,10"
                     IsVisible="{Binding HasStatus}">
                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                     <ProgressBar Width="60" Height="3" IsIndeterminate="True" Foreground="#E8B64C" Background="#26FFFFFF"

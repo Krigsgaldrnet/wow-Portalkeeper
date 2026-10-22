@@ -142,10 +142,13 @@ internal static partial class Program
         using (var shop = Shop(portal))
         {
             await shop.LoadAsync();
-            ShopOfferView Card(uint id) => shop.Offers.First(o => o.Offer.Id == id);
             check("the shop opens on the online character", shop.SelectedCharacter?.Name == "Bronn" && shop.Balance == 45);
-            check("categories: all, then mounts, companions, services, then the rest",
-                string.Join(",", shop.Categories.Select(c => c.Title)) == "ALL,MOUNTS,COMPANIONS,SERVICES,TOY" && shop.Offers.Count == 4);
+            check("categories: mounts, companions, services, then the rest, and no ALL tab",
+                string.Join(",", shop.Categories.Select(c => c.Title)) == "MOUNTS,COMPANIONS,SERVICES,TOY");
+            check("the shop opens on the mounts tab", shop.SelectedCategory?.Key == "mount" && shop.Offers.Count == 1 && shop.Offers[0].Offer.Id == 201);
+            ShopOfferView Any(uint id) => shop.Categories.Select(c => { shop.SelectedCategory = c; return shop.Offers.FirstOrDefault(o => o.Offer.Id == id); })
+                .First(o => o is not null)!;
+            ShopOfferView Card(uint id) => Any(id);
             check("an offer the character can't use can't be bought", Card(201) is { CanBuy: false, StateText: "Can't use" });
             check("an offer the character can use and afford can be bought", Card(101) is { CanBuy: true, HasState: false });
             check("an offer the wallet can't pay for can't be bought", Card(301) is { CanBuy: false, StateText: "Need 5 more" });
@@ -246,6 +249,7 @@ internal static partial class Program
         using (var shop = Shop(new FakeShopPortal()))
         {
             await shop.LoadAsync();
+            shop.SelectedCategory = shop.Categories.First(c => c.Key == "pet");
             var pet = shop.Offers.First(o => o.Offer.Id == 101);
             shop.SelectedCharacter = shop.Characters.First(c => c.Guid == 7);
             shop.AskToBuy(pet);
@@ -259,6 +263,7 @@ internal static partial class Program
         using (var shop = Shop(flaky))
         {
             await shop.LoadAsync();
+            shop.SelectedCategory = shop.Categories.First(c => c.Key == "pet");
             flaky.BuyStatus = 502;
             flaky.BuyJson = """{"error":"The game server didn't answer. Look at your balance before you try again: the purchase may have gone through."}""";
             flaky.Status = 503;
@@ -285,7 +290,7 @@ internal static partial class Program
             flaky.Status = 200;
             flaky.ListingJson = ShopListingJson;
             await shop.LoadAsync();
-            shop.SelectedCategory = shop.Categories.First(c => c.Key == ShopCategoryView.AllKey);
+            shop.SelectedCategory = shop.Categories.First(c => c.Key == "toy");
             shop.SelectedOffer = shop.Offers.First(o => o.Offer.Id == 301);
             var before = shop.SelectedOffer;
             await shop.LoadAsync();
@@ -297,6 +302,62 @@ internal static partial class Program
         }
         try { Directory.Delete(previewDir, true); } catch (DirectoryNotFoundException) { }
 
+        // Sorting and filtering within a tab, on a listing with several mounts.
+        portal = new FakeShopPortal { ListingJson = """
+            {"balance":45,
+             "characters":[{"guid":7,"name":"Alys","race":10,"class":2,"gender":1,"level":62,"online":false},
+                           {"guid":9,"name":"Bronn","race":3,"class":1,"gender":0,"level":12,"online":true}],
+             "offers":[{"id":101,"category":"pet","name":"Red Panda","description":"A companion.","price":10,"owned":[],"cannot":[]},
+                       {"id":201,"category":"mount","name":"Great Red Panda","description":"A big panda.","price":40,"owned":[],"cannot":[9]},
+                       {"id":202,"category":"mount","name":"Ashen Steed","description":"A horse.","price":60,"owned":[],"cannot":[]},
+                       {"id":203,"category":"mount","name":"Bramble Owl","description":"An owl.","price":0,"owned":[7],"cannot":[]},
+                       {"id":204,"category":"mount","name":"Dusty Ram","description":"A panda-coloured ram.","price":25,"owned":[],"cannot":[]}]}
+            """ };
+        using (var shop = Shop(portal))
+        {
+            await shop.LoadAsync();
+            string Ids() => string.Join(",", shop.Offers.Select(o => o.Offer.Id));
+            check("the mounts tab in the shop's order", shop.SelectedCategory?.Key == "mount" && Ids() == "201,202,203,204" && !shop.IsFiltered);
+            shop.SelectedSort = shop.Sorts.First(s => s.Key == "price-desc");
+            check("sort by price, high to low", Ids() == "202,201,204,203");
+            shop.SelectedSort = shop.Sorts.First(s => s.Key == "price-asc");
+            check("sort by price, low to high", Ids() == "203,204,201,202");
+            shop.SelectedSort = shop.Sorts.First(s => s.Key == "name");
+            check("sort by name", Ids() == "202,203,204,201");
+            shop.SelectedSort = shop.Sorts[0];
+            check("shop order again", Ids() == "201,202,203,204");
+
+            shop.SearchText = "  PANDA ";
+            check("the search matches names and descriptions, ignoring case and spaces around it",
+                shop.IsFiltered && Ids() == "201,204" && shop.SelectedOffer?.Offer.Id == 201);
+            shop.SearchText = "zzz";
+            check("a search with no match says so instead of 'nothing for sale'",
+                shop.HasNoOffers && shop.SelectedOffer is null && shop.NoOffersText.StartsWith("Nothing here matches", StringComparison.Ordinal));
+            shop.ClearFilters();
+            check("CLEAR empties the search and shows the tab again", !shop.IsFiltered && shop.SearchText == "" && Ids() == "201,202,203,204");
+
+            check("Bronn is the picked character", shop.SelectedCharacter?.Guid == 9);
+            shop.SelectedShow = shop.Shows.First(s => s.Key == "owned");
+            check("show owned follows the picked character (Bronn owns nothing)", shop.IsFiltered && shop.Offers.Count == 0);
+            shop.SelectedCharacter = shop.Characters.First(c => c.Guid == 7);
+            check("picking another character refilters: Alys owns the owl", Ids() == "203");
+            shop.SelectedShow = shop.Shows.First(s => s.Key == "unowned");
+            check("show not owned", Ids() == "201,202,204");
+            shop.SelectedShow = shop.Shows.First(s => s.Key == "buyable");
+            check("show what can be bought now: affordable, usable, not owned", Ids() == "201,204");
+            shop.SelectedCharacter = shop.Characters.First(c => c.Guid == 9);
+            check("can buy now follows the character: Bronn can't ride the panda but can have the free owl", Ids() == "203,204");
+
+            shop.SelectedSort = shop.Sorts.First(s => s.Key == "price-desc");
+            await shop.LoadAsync();
+            check("a refresh keeps the tab, the sort and the Show filter",
+                shop.SelectedCategory?.Key == "mount" && shop.SelectedSort.Key == "price-desc" && shop.SelectedShow.Key == "buyable" && Ids() == "204,203");
+            shop.SelectedCategory = shop.Categories.First(c => c.Key == "pet");
+            check("the sort and filter carry over to another tab", Ids() == "101" && shop.IsFiltered);
+            shop.SelectedShow = shop.Shows[0];
+            check("Everything puts the tab back", !shop.IsFiltered && Ids() == "101");
+        }
+
         using (var shop = Shop(new FakeShopPortal { Status = 503, ListingJson = """{"error":"The shop is closed."}""" }))
         {
             await shop.LoadAsync();
@@ -307,7 +368,7 @@ internal static partial class Program
             await shop.LoadAsync();
             check("an account without characters is told so, and nothing can be bought",
                 shop.HasNoCharacters && shop.SelectedCharacter is null && shop.Offers.All(o => o is { CanBuy: false, StateText: "No character" }));
-            check("a single category needs no ALL tab", shop.Categories.Count == 1);
+            check("a single category is a single tab", shop.Categories.Count == 1);
         }
         using (var shop = Shop(new FakeShopPortal { ListingJson = """
             {"balance":0,"characters":[{"guid":7,"name":"Alys","race":4,"class":11,"gender":1,"level":20,"online":false}],

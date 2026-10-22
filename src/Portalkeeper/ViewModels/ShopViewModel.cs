@@ -52,6 +52,9 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
     private int _balance;
     private ShopCharacterView? _selectedCharacter;
     private ShopCategoryView? _selectedCategory;
+    private ShopSortView _selectedSort = ShopSortView.Choices[0];
+    private ShopShowView _selectedShow = ShopShowView.Choices[0];
+    private string _searchText = "";
     private string _statusMessage = "";
     private bool _statusIsError;
     private ShopOfferView? _pendingOffer;
@@ -70,6 +73,8 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
     public ObservableCollection<ShopCharacterView> Characters { get; } = [];
     public ObservableCollection<ShopCategoryView> Categories { get; } = [];
     public ObservableCollection<ShopOfferView> Offers { get; } = [];
+    public IReadOnlyList<ShopSortView> Sorts => ShopSortView.Choices;
+    public IReadOnlyList<ShopShowView> Shows => ShopShowView.Choices;
 
     public bool IsLoading { get => _isLoading; private set { if (SetProperty(ref _isLoading, value)) NotifyBusy(); } }
     public bool IsBuying { get => _isBuying; private set { if (SetProperty(ref _isBuying, value)) NotifyBusy(); } }
@@ -85,6 +90,8 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
     public bool HasNoCharacters => _hasListing && Characters.Count == 0;
     public bool HasCharacters => Characters.Count > 0;
     public bool HasNoOffers => _hasListing && Offers.Count == 0;
+    /// <summary>Why the tile column is empty: nothing for sale, or nothing left after the search and Show filter.</summary>
+    public string NoOffersText => IsFiltered ? "Nothing here matches. Clear the search or show everything." : "Nothing is for sale right now.";
     public bool HasBalance => _hasListing;
 
     public int Balance
@@ -120,6 +127,55 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
             foreach (var category in Categories) category.IsSelected = ReferenceEquals(category, value);
             FilterOffers();
         }
+    }
+
+    /// <summary>How the tab's tiles are ordered. The shop's own order (the realm's sort) is the default.</summary>
+    public ShopSortView SelectedSort
+    {
+        get => _selectedSort;
+        set
+        {
+            if (value is null || !SetProperty(ref _selectedSort, value)) return;
+            FilterOffers();
+        }
+    }
+
+    /// <summary>Which of the tab's offers show: everything, or only what can be bought, isn't owned, or is owned.</summary>
+    public ShopShowView SelectedShow
+    {
+        get => _selectedShow;
+        set
+        {
+            if (value is null || !SetProperty(ref _selectedShow, value)) return;
+            OnPropertyChanged(nameof(IsFiltered));
+            FilterOffers();
+        }
+    }
+
+    /// <summary>Narrows the tab to offers whose name or description has this text.</summary>
+    public string SearchText
+    {
+        get => _searchText;
+        set
+        {
+            if (!SetProperty(ref _searchText, value ?? "")) return;
+            OnPropertyChanged(nameof(IsFiltered));
+            FilterOffers();
+        }
+    }
+
+    /// <summary>A search or a Show choice other than everything is hiding offers.</summary>
+    public bool IsFiltered => _searchText.Trim().Length > 0 || !_selectedShow.IsEverything;
+
+    /// <summary>Back to everything in the tab, in the shop's order kept as it is.</summary>
+    public void ClearFilters()
+    {
+        var changed = false;
+        if (_searchText.Length > 0) { _searchText = ""; OnPropertyChanged(nameof(SearchText)); changed = true; }
+        if (!_selectedShow.IsEverything) { _selectedShow = ShopShowView.Choices[0]; OnPropertyChanged(nameof(SelectedShow)); changed = true; }
+        if (!changed) return;
+        OnPropertyChanged(nameof(IsFiltered));
+        FilterOffers();
     }
 
     /// <summary>The offer on the stage. Picking one on a tile only shows it; BUY on the stage buys it.</summary>
@@ -402,9 +458,10 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
         _allOffers.AddRange(listing.Offers.Select(o => new ShopOfferView(o)));
         foreach (var offer in _allOffers) _ = LoadTilePictureAsync(offer);
 
+        // One tab per category in reading order; the shop opens on mounts. There's no "all" tab: the
+        // search and Show filter work within a tab, and the tabs are few.
         Categories.Clear();
         var keys = _allOffers.Select(o => o.Offer.Category).Distinct().OrderBy(ShopCategoryView.Order).ThenBy(k => k, StringComparer.Ordinal).ToList();
-        if (keys.Count > 1) Categories.Add(new ShopCategoryView(ShopCategoryView.AllKey, _allOffers.Count));
         foreach (var key in keys) Categories.Add(new ShopCategoryView(key, _allOffers.Count(o => o.Offer.Category == key)));
 
         HasListing = true;
@@ -417,7 +474,9 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
         }
 
         _selectedCategory = null;
-        SelectedCategory = Categories.FirstOrDefault(c => c.Key == selectedCategory) ?? Categories.FirstOrDefault();
+        SelectedCategory = Categories.FirstOrDefault(c => c.Key == selectedCategory)
+            ?? Categories.FirstOrDefault(c => c.Key == ShopCategoryView.DefaultKey)
+            ?? Categories.FirstOrDefault();
         if (_selectedCategory is null) FilterOffers();
 
         // Set without the setter's guard: the cards are new and need their states either way.
@@ -432,10 +491,16 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
     private void FilterOffers()
     {
         Offers.Clear();
-        var key = _selectedCategory?.Key ?? ShopCategoryView.AllKey;
-        foreach (var offer in _allOffers.Where(o => key == ShopCategoryView.AllKey || o.Offer.Category == key))
-            Offers.Add(offer);
+        var key = _selectedCategory?.Key;
+        var search = _searchText.Trim();
+        var shown = _allOffers.Where(o => key is null || o.Offer.Category == key);
+        if (search.Length > 0)
+            shown = shown.Where(o => o.Name.Contains(search, StringComparison.CurrentCultureIgnoreCase)
+                || o.Description.Contains(search, StringComparison.CurrentCultureIgnoreCase));
+        shown = _selectedShow.Apply(shown);
+        foreach (var offer in _selectedSort.Apply(shown)) Offers.Add(offer);
         OnPropertyChanged(nameof(HasNoOffers));
+        OnPropertyChanged(nameof(NoOffersText));
         // The stage shows something of this tab: the offer it showed if that's here (after a refresh
         // it's a new tile for the same offer, and its picture stays up), else the first tile.
         SelectedOffer = Offers.FirstOrDefault(o => o.Offer.Id == _selectedOffer?.Offer.Id) ?? Offers.FirstOrDefault();
@@ -446,6 +511,8 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
         foreach (var offer in _allOffers) offer.Update(_selectedCharacter, _balance);
         OnPropertyChanged(nameof(ConfirmText));
         OnPropertyChanged(nameof(ConfirmDetail));
+        // Owned and "can buy" follow the character and the balance, so a Show filter on them does too.
+        if (!_selectedShow.IsEverything) FilterOffers();
     }
 
     private void NotifyBusy()
@@ -463,6 +530,7 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(HasNoCharacters));
         OnPropertyChanged(nameof(HasCharacters));
         OnPropertyChanged(nameof(HasNoOffers));
+        OnPropertyChanged(nameof(NoOffersText));
         OnPropertyChanged(nameof(HasBalance));
     }
 
@@ -494,10 +562,11 @@ public sealed class ShopCharacterView(ShopCharacter character)
     public IBrush ClassBrush { get; } = ArmoryNames.ClassBrush(character.Class);
 }
 
-/// <summary>A filter tab: one offer category, or all of them.</summary>
+/// <summary>A filter tab: one offer category.</summary>
 public sealed class ShopCategoryView(string key, int count) : ViewModelBase
 {
-    public const string AllKey = "\0all";
+    /// <summary>The tab the shop opens on when it has one.</summary>
+    public const string DefaultKey = "mount";
     private bool _isSelected;
 
     public string Key { get; } = key;
@@ -510,13 +579,65 @@ public sealed class ShopCategoryView(string key, int count) : ViewModelBase
 
     public static string TitleOf(string key) => key switch
     {
-        AllKey => "ALL",
         "mount" => "MOUNTS",
         "pet" => "COMPANIONS",
         "service" => "SERVICES",
         "" => "OTHER",
         _ => key.ToUpperInvariant(),
     };
+}
+
+/// <summary>An order for the tiles of a tab.</summary>
+public sealed class ShopSortView
+{
+    public static readonly IReadOnlyList<ShopSortView> Choices =
+    [
+        new("shop", "Shop order", offers => offers),
+        new("name", "Name A to Z", offers => offers.OrderBy(o => o.Name, StringComparer.CurrentCultureIgnoreCase)),
+        new("price-asc", "Price: low to high", offers => offers.OrderBy(o => o.Price).ThenBy(o => o.Name, StringComparer.CurrentCultureIgnoreCase)),
+        new("price-desc", "Price: high to low", offers => offers.OrderByDescending(o => o.Price).ThenBy(o => o.Name, StringComparer.CurrentCultureIgnoreCase)),
+    ];
+
+    private readonly Func<IEnumerable<ShopOfferView>, IEnumerable<ShopOfferView>> _order;
+
+    private ShopSortView(string key, string title, Func<IEnumerable<ShopOfferView>, IEnumerable<ShopOfferView>> order)
+    {
+        Key = key;
+        Title = title;
+        _order = order;
+    }
+
+    public string Key { get; }
+    public string Title { get; }
+    public IEnumerable<ShopOfferView> Apply(IEnumerable<ShopOfferView> offers) => _order(offers);
+    public override string ToString() => Title;
+}
+
+/// <summary>Which of a tab's offers show. Owned and "can buy" are for the picked character.</summary>
+public sealed class ShopShowView
+{
+    public static readonly IReadOnlyList<ShopShowView> Choices =
+    [
+        new("all", "Everything", _ => true),
+        new("buyable", "Can buy now", o => o.CanBuy),
+        new("unowned", "Not owned", o => !o.IsOwned),
+        new("owned", "Owned", o => o.IsOwned),
+    ];
+
+    private readonly Func<ShopOfferView, bool> _keep;
+
+    private ShopShowView(string key, string title, Func<ShopOfferView, bool> keep)
+    {
+        Key = key;
+        Title = title;
+        _keep = keep;
+    }
+
+    public string Key { get; }
+    public string Title { get; }
+    public bool IsEverything => Key == "all";
+    public IEnumerable<ShopOfferView> Apply(IEnumerable<ShopOfferView> offers) => IsEverything ? offers : offers.Where(_keep);
+    public override string ToString() => Title;
 }
 
 /// <summary>One offer card. Whether it can be bought depends on the picked character and the balance.</summary>
