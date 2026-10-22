@@ -54,6 +54,15 @@ public sealed partial class MainViewModel
         ? $"{p.Online} player{(p.Online == 1 ? "" : "s")} online" + (p.Bots > 0 ? $" · {p.Bots} bots" : "")
         : "";
 
+    // A restart closer than this greys out ENTER REALM: not worth loading in for.
+    private static readonly TimeSpan RestartBlocksEntryWithin = TimeSpan.FromMinutes(10);
+
+    /// <summary>The realm restarts (or shuts down) within <see cref="RestartBlocksEntryWithin"/>.</summary>
+    public bool RestartImminent => IsRestartImminent(Live?.RestartAt, DateTimeOffset.UtcNow);
+
+    internal static bool IsRestartImminent(DateTimeOffset? restartAt, DateTimeOffset now) =>
+        restartAt is { } at && at - now < RestartBlocksEntryWithin;
+
     public bool HasLiveRestart => Live?.RestartAt is { } at && at > DateTimeOffset.UtcNow.AddSeconds(-30);
     public string LiveRestartText => Live?.RestartAt is { } at ? "Realm restarts " + DescribeIn(at - DateTimeOffset.UtcNow) : "";
     public IBrush LiveRestartBrush => Brush.Parse(Live?.RestartAt is { } at && at - DateTimeOffset.UtcNow < TimeSpan.FromMinutes(5) ? "#E5604D" : "#F2B84B");
@@ -198,5 +207,9 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(HasWhatsNewItems));
         OnPropertyChanged(nameof(WhatsNewMoreText));
         OnPropertyChanged(nameof(WhatsNewUrl));
+        // A restart coming up closes ENTER REALM, and one called off opens it again.
+        OnPropertyChanged(nameof(RestartImminent));
+        OnPropertyChanged(nameof(CanEnterRealm));
+        NotifyHome();
     }
 }

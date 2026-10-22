@@ -101,6 +101,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private RealmHealthState _realmHealthState =
         RealmHealthState.Unknown;
 
+    private RealmBootStatus? _realmBoot;
+
     private string _clientPath =
         "No client installation configured.";
 
@@ -370,6 +372,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 RealmHealthState.AuthOnly => "● Auth Only",
                 RealmHealthState.WorldOnly => "● World Only",
                 RealmHealthState.Offline => "● Offline",
+                RealmHealthState.Booting => "● Booting",
                 _ => "● Unknown"
             };
 
@@ -562,9 +565,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             ? "LAUNCHING..."
             : IsGameRunning
                 ? "WORLD OF WARCRAFT RUNNING"
+            : RealmBooting && GameReadyToEnter
+                ? "STARTING UP"
+            : RestartImminent && GameReadyToEnter
+                ? "RESTARTING"
                 : "ENTER REALM";
 
-    public bool CanEnterRealm =>
+    // Evermore fork: the game is ready but login isn't open yet, or the realm is about to restart,
+    // so there's nothing to enter.
+    public bool CanEnterRealm => GameReadyToEnter && !RealmBooting && !RestartImminent;
+
+    /// <summary>Everything on this PC is ready to launch, whatever the realm is doing.</summary>
+    private bool GameReadyToEnter =>
         !_isRefreshingConfiguration &&
         !_isManagingComponents &&
         ClientValid &&
@@ -589,6 +601,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
         try
         {
+            // The 45-second status check may not have seen a restart yet: ask now.
+            if (RealmBranding.IsBuiltIn(_realmInfo))
+            {
+                LaunchStatus = "Checking the realm...";
+                await Task.WhenAll(RefreshRealmHealthAsync(), RefreshHomeInfoAsync(whatsNew: false));
+                if (RealmBooting)
+                    throw new InvalidOperationException("The realm is still starting up (" + BootProgressText + "). ENTER REALM opens once login does.");
+                if (RestartImminent)
+                    throw new InvalidOperationException(LiveRestartText + ". ENTER REALM opens again once it's back up.");
+                LaunchStatus = "Preparing client...";
+            }
             await StopOptionalAddonUpdatesAsync();
             ApplyClientInfo(_clientService.ValidateClient(ClientPath, _realmInfo.Client));
             if (!await EnforceRealmClientAsync())
@@ -666,15 +689,21 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         {
             var checkedRealm = _realmInfo;
             if (checkedRealm is null || !checkedRealm.IsConfigured) return;
-            _realmHealthState = RealmHealthState.Checking;
-            _realmStatus = "Checking realm server status...";
-            NotifyRealmChanged();
+            // While booting it is asked every few seconds: keep showing the boot instead of flashing "Checking".
+            if (_realmHealthState != RealmHealthState.Booting)
+            {
+                _realmHealthState = RealmHealthState.Checking;
+                _realmStatus = "Checking realm server status...";
+                NotifyRealmChanged();
+            }
 
             var health =
-                await _realmHealthService.CheckAsync(checkedRealm);
+                await _realmHealthService.CheckAsync(checkedRealm,
+                    RealmBranding.IsBuiltIn(checkedRealm) ? RealmBranding.RealmStatusUrl : null);
             if (!ReferenceEquals(checkedRealm, _realmInfo)) return;
 
             _realmHealthState = health.State;
+            _realmBoot = health.Boot;
             _realmStatus = health.State switch
             {
                 RealmHealthState.Online =>
@@ -685,15 +714,38 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                     "World server is reachable; authentication server appears offline.",
                 RealmHealthState.Offline =>
                     "Realm servers appear offline or unreachable.",
+                RealmHealthState.Booting =>
+                    "The realm is starting up: " + BootProgressText + ". Login opens when it's ready.",
                 _ =>
                     "Realm server status could not be determined."
             };
 
             NotifyRealmChanged();
+            if (_realmHealthState == RealmHealthState.Booting)
+                _ = WatchBootAsync();
         }
         finally
         {
             _realmHealthLock.Release();
+        }
+    }
+
+    private bool _watchingBoot;
+
+    /// <summary>Asks again every 10 seconds while the realm boots, so the launcher shows it open soon after it opens.</summary>
+    private async Task WatchBootAsync()
+    {
+        if (_watchingBoot) return;
+        _watchingBoot = true;
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+            while (_realmHealthState == RealmHealthState.Booting && await timer.WaitForNextTickAsync())
+                await RefreshRealmHealthAsync();
+        }
+        finally
+        {
+            _watchingBoot = false;
         }
     }
 
@@ -884,6 +936,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             }
             _realmStatus = _configurationStatus;
             _realmHealthState = RealmHealthState.Unknown;
+            _realmBoot = null;
             if (_realmInfo is not null)
             {
                 // ClientPath holds a placeholder message until a client is chosen; don't validate that as a path.

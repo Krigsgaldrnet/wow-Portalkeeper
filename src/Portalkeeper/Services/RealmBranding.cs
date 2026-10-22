@@ -50,6 +50,12 @@ public static class RealmBranding
     /// </summary>
     public const string CacheVersionUrl = RealmBaseUrl + "cache-version.txt";
 
+    /// <summary>
+    /// Written by the server while it boots: login stays closed until the world server is up and
+    /// its bots have logged in, and the launcher shows the realm as booting meanwhile.
+    /// </summary>
+    public const string RealmStatusUrl = RealmBaseUrl + "realm-status.json";
+
     /// <summary>The built-in realm's realm.conf URL (its ConfigURL), which identifies it among realms.</summary>
     public const string ConfigUrl = RealmBaseUrl + RealmFileName;
 

@@ -20,13 +20,29 @@ public sealed partial class MainViewModel
         RealmHealthState.AuthOnly => "Login only",
         RealmHealthState.WorldOnly => "World only",
         RealmHealthState.Offline => "Offline",
+        RealmHealthState.Booting => "Booting",
         _ => "Unknown"
+    };
+
+    private static string Capitalize(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
+
+    public bool RealmBooting => RealmConfigured && _realmHealthState == RealmHealthState.Booting;
+
+    /// <summary>Where the boot is: the world server loading, or how many bots are in.</summary>
+    public string BootProgressText => DescribeBoot(_realmBoot);
+
+    public static string DescribeBoot(RealmBootStatus? boot) => boot switch
+    {
+        { Stage: "bots", BotsTarget: > 0 } => $"bots logging in ({boot.BotsOnline} of {boot.BotsTarget})",
+        { Stage: "bots" } => "bots logging in",
+        { Stage: "login" } => "login is opening",
+        _ => "the world is loading"
     };
 
     public IBrush RealmStatusBrush => Brush.Parse(!RealmConfigured ? "#8E9AA5" : _realmHealthState switch
     {
         RealmHealthState.Online => "#3DDC84",
-        RealmHealthState.AuthOnly or RealmHealthState.WorldOnly => "#F2B84B",
+        RealmHealthState.AuthOnly or RealmHealthState.WorldOnly or RealmHealthState.Booting => "#F2B84B",
         RealmHealthState.Offline => "#E5604D",
         _ => "#8E9AA5"
     });
@@ -36,7 +52,7 @@ public sealed partial class MainViewModel
         : !ClientValid || _clientCheck == ClientCheck.NotRealmClient ? HomeCard.NoClient
         : IsGameRunning || IsLaunching ? HomeCard.Playing
         : _isInstallingRequired || IsCheckingAddons ? HomeCard.Syncing
-        : CanEnterRealm ? HomeCard.Ready
+        : GameReadyToEnter ? HomeCard.Ready
         : HomeCard.Attention;
 
     public bool CardIsNoClient => Card == HomeCard.NoClient;
@@ -48,7 +64,7 @@ public sealed partial class MainViewModel
 
     public string CardIcon => Card switch
     {
-        HomeCard.Ready => "✓",
+        HomeCard.Ready => RealmBooting || RestartImminent ? "↻" : "✓",
         HomeCard.Installing or HomeCard.NoClient => "↓",
         HomeCard.Syncing => "↻",
         HomeCard.Playing => "▶",
@@ -57,6 +73,7 @@ public sealed partial class MainViewModel
 
     public IBrush CardIconBrush => Brush.Parse(Card switch
     {
+        HomeCard.Ready when RealmBooting || RestartImminent => "#F2B84B",
         HomeCard.Ready or HomeCard.Playing => "#3DDC84",
         HomeCard.Attention => "#F2B84B",
         _ => "#E8B64C"
@@ -70,7 +87,9 @@ public sealed partial class MainViewModel
             : ClientValid ? "Update your client to " + RealmBranding.LauncherName : "Install World of Warcraft",
         HomeCard.Syncing => _isInstallingRequired ? "Updating realm files" : "Checking realm files",
         HomeCard.Playing => "World of Warcraft is running",
-        HomeCard.Ready => "Your game is up to date",
+        HomeCard.Ready => RealmBooting ? "The realm is starting up"
+            : RestartImminent ? "The realm is restarting soon"
+            : "Your game is up to date",
         _ => "Needs attention"
     };
 
@@ -81,13 +100,19 @@ public sealed partial class MainViewModel
             : ClientValid ? "INSTALL WOW and pick this client's folder to update it in place (only files that differ are downloaded, "
                 + "files the realm doesn't ship are deleted, addons and settings stay), or pick another folder for a fresh copy."
             : "Download the realm's client. Pick a folder with a 3.3.5a client in it to use it as the base and download only what differs.",
-        HomeCard.Ready => HasRepairStatus ? RepairStatus : "Patches and addons are installed and verified.",
+        HomeCard.Ready => HasRepairStatus ? RepairStatus
+            : RealmBooting ? "Your game is up to date. ENTER REALM opens once the realm is ready: "
+                + BootProgressText + "."
+            : RestartImminent ? "Your game is up to date. " + LiveRestartText + "; ENTER REALM opens again once it's back up."
+            : "Patches and addons are installed and verified.",
         _ => LaunchStatus
     };
 
     public string EnterRealmSubText => Card switch
     {
-        HomeCard.Ready => "Game is up to date",
+        HomeCard.Ready => RealmBooting ? Capitalize(BootProgressText) + "..."
+            : RestartImminent ? LiveRestartText
+            : "Game is up to date",
         HomeCard.Playing => "Have fun out there",
         HomeCard.Syncing => _isInstallingRequired ? "Updating realm files..." : "Checking realm files...",
         HomeCard.Installing => "Downloading...",
@@ -111,6 +136,8 @@ public sealed partial class MainViewModel
     {
         OnPropertyChanged(nameof(RealmStatusText));
         OnPropertyChanged(nameof(RealmStatusBrush));
+        OnPropertyChanged(nameof(RealmBooting));
+        OnPropertyChanged(nameof(BootProgressText));
         OnPropertyChanged(nameof(Card));
         OnPropertyChanged(nameof(CardIsNoClient));
         OnPropertyChanged(nameof(CardIsInstalling));
@@ -123,6 +150,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(CardTitle));
         OnPropertyChanged(nameof(CardDetail));
         OnPropertyChanged(nameof(EnterRealmSubText));
+        OnPropertyChanged(nameof(EnterRealmButtonText));
         OnPropertyChanged(nameof(FooterText));
     }
 }
