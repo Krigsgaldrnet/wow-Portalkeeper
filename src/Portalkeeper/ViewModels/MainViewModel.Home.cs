@@ -64,7 +64,7 @@ public sealed partial class MainViewModel
 
     public string CardIcon => Card switch
     {
-        HomeCard.Ready => RealmBooting ? "↻" : "✓",
+        HomeCard.Ready => RealmBooting || RestartImminent ? "↻" : "✓",
         HomeCard.Installing or HomeCard.NoClient => "↓",
         HomeCard.Syncing => "↻",
         HomeCard.Playing => "▶",
@@ -73,7 +73,7 @@ public sealed partial class MainViewModel
 
     public IBrush CardIconBrush => Brush.Parse(Card switch
     {
-        HomeCard.Ready when RealmBooting => "#F2B84B",
+        HomeCard.Ready when RealmBooting || RestartImminent => "#F2B84B",
         HomeCard.Ready or HomeCard.Playing => "#3DDC84",
         HomeCard.Attention => "#F2B84B",
         _ => "#E8B64C"
@@ -87,7 +87,9 @@ public sealed partial class MainViewModel
             : ClientValid ? "Update your client to " + RealmBranding.LauncherName : "Install World of Warcraft",
         HomeCard.Syncing => _isInstallingRequired ? "Updating realm files" : "Checking realm files",
         HomeCard.Playing => "World of Warcraft is running",
-        HomeCard.Ready => RealmBooting ? "The realm is starting up" : "Your game is up to date",
+        HomeCard.Ready => RealmBooting ? "The realm is starting up"
+            : RestartImminent ? "The realm is restarting soon"
+            : "Your game is up to date",
         _ => "Needs attention"
     };
 
@@ -101,13 +103,16 @@ public sealed partial class MainViewModel
         HomeCard.Ready => HasRepairStatus ? RepairStatus
             : RealmBooting ? "Your game is up to date. ENTER REALM opens once the realm is ready: "
                 + BootProgressText + "."
+            : RestartImminent ? "Your game is up to date. " + LiveRestartText + "; ENTER REALM opens again once it's back up."
             : "Patches and addons are installed and verified.",
         _ => LaunchStatus
     };
 
     public string EnterRealmSubText => Card switch
     {
-        HomeCard.Ready => RealmBooting ? Capitalize(BootProgressText) + "..." : "Game is up to date",
+        HomeCard.Ready => RealmBooting ? Capitalize(BootProgressText) + "..."
+            : RestartImminent ? LiveRestartText
+            : "Game is up to date",
         HomeCard.Playing => "Have fun out there",
         HomeCard.Syncing => _isInstallingRequired ? "Updating realm files..." : "Checking realm files...",
         HomeCard.Installing => "Downloading...",
