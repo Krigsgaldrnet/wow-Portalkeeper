@@ -162,6 +162,8 @@ internal static partial class Program
         check("booting reads as the bot count", MainViewModel.DescribeBoot(bots) == "bots logging in (812 of 2154)");
         check("the world stage reads as loading", MainViewModel.DescribeBoot(RealmHealthService.ParseBootStatus(
             """{"state":"booting","stage":"world","bots_online":0,"bots_target":0,"since":1792688400,"updated":1792688600}""", bootNow)) == "the world is loading");
+        check("the last stage reads as login opening", MainViewModel.DescribeBoot(RealmHealthService.ParseBootStatus(
+            """{"state":"booting","stage":"login","bots_online":0,"bots_target":0,"since":1792688400,"updated":1792688600}""", bootNow)) == "login is opening");
         check("a booting status left by a server that stopped mid-boot is ignored", RealmHealthService.ParseBootStatus(
             """{"state":"booting","stage":"world","bots_online":0,"bots_target":0,"since":1792688000,"updated":1792688300}""", bootNow) is null);
         check("online and offline aren't booting",

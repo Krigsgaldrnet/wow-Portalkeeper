@@ -33,6 +33,7 @@ public sealed partial class MainViewModel
     {
         { Stage: "bots", BotsTarget: > 0 } => $"bots logging in ({boot.BotsOnline} of {boot.BotsTarget})",
         { Stage: "bots" } => "bots logging in",
+        { Stage: "login" } => "login is opening",
         _ => "the world is loading"
     };
 

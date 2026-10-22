@@ -28,7 +28,7 @@ public sealed class RealmHealthInfo
 /// login server back until the world server is up and its bots have logged in.
 /// </summary>
 /// <param name="State">"booting", "online" or "offline".</param>
-/// <param name="Stage">While booting: "world" (the world server is loading) or "bots" (bots are logging in).</param>
+/// <param name="Stage">While booting: "world" (the world server is loading), "bots" (bots are logging in) or "login" (the login server is starting).</param>
 /// <param name="Since">When this boot started (Unix seconds, server clock).</param>
 /// <param name="Updated">When the file was written; rewritten every few seconds while booting.</param>
 public sealed record RealmBootStatus(
