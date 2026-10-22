@@ -24,6 +24,8 @@ public sealed partial class MainViewModel
         _ => "Unknown"
     };
 
+    private static string Capitalize(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
+
     public bool RealmBooting => RealmConfigured && _realmHealthState == RealmHealthState.Booting;
 
     /// <summary>Where the boot is: the world server loading, or how many bots are in.</summary>
@@ -50,7 +52,7 @@ public sealed partial class MainViewModel
         : !ClientValid || _clientCheck == ClientCheck.NotRealmClient ? HomeCard.NoClient
         : IsGameRunning || IsLaunching ? HomeCard.Playing
         : _isInstallingRequired || IsCheckingAddons ? HomeCard.Syncing
-        : CanEnterRealm ? HomeCard.Ready
+        : GameReadyToEnter ? HomeCard.Ready
         : HomeCard.Attention;
 
     public bool CardIsNoClient => Card == HomeCard.NoClient;
@@ -97,7 +99,7 @@ public sealed partial class MainViewModel
                 + "files the realm doesn't ship are deleted, addons and settings stay), or pick another folder for a fresh copy."
             : "Download the realm's client. Pick a folder with a 3.3.5a client in it to use it as the base and download only what differs.",
         HomeCard.Ready => HasRepairStatus ? RepairStatus
-            : RealmBooting ? "Your game is up to date. Login opens once the realm is ready: "
+            : RealmBooting ? "Your game is up to date. ENTER REALM opens once the realm is ready: "
                 + BootProgressText + "."
             : "Patches and addons are installed and verified.",
         _ => LaunchStatus
@@ -105,7 +107,7 @@ public sealed partial class MainViewModel
 
     public string EnterRealmSubText => Card switch
     {
-        HomeCard.Ready => RealmBooting ? "Realm is starting up" : "Game is up to date",
+        HomeCard.Ready => RealmBooting ? Capitalize(BootProgressText) + "..." : "Game is up to date",
         HomeCard.Playing => "Have fun out there",
         HomeCard.Syncing => _isInstallingRequired ? "Updating realm files..." : "Checking realm files...",
         HomeCard.Installing => "Downloading...",
@@ -143,6 +145,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(CardTitle));
         OnPropertyChanged(nameof(CardDetail));
         OnPropertyChanged(nameof(EnterRealmSubText));
+        OnPropertyChanged(nameof(EnterRealmButtonText));
         OnPropertyChanged(nameof(FooterText));
     }
 }
