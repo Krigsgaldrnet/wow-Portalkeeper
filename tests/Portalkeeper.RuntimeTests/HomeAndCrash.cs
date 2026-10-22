@@ -153,6 +153,59 @@ internal static partial class Program
         check("world bosses read as a count, not names",
             MainViewModel.DescribeBosses([new("Azuregos", "Azshara", true, null), new("Ysondre", "Duskwood", false, 1900000000)]) == "1 of 2 world bosses up"
             && MainViewModel.DescribeBosses([new("Azuregos", "Azshara", false, 1900000000)]) == "0 of 1 world boss up");
+
+        // ---- Realm booting (realm-status.json)
+        var bootNow = DateTimeOffset.FromUnixTimeSeconds(1792688600);
+        var bots = RealmHealthService.ParseBootStatus(
+            """{"state":"booting","stage":"bots","bots_online":812,"bots_target":2154,"since":1792688400,"updated":1792688595}""", bootNow);
+        check("a current booting status is read", bots is { Stage: "bots", BotsOnline: 812, BotsTarget: 2154, Since: 1792688400 });
+        check("booting reads as the bot count", MainViewModel.DescribeBoot(bots) == "bots logging in (812 of 2154)");
+        check("the world stage reads as loading", MainViewModel.DescribeBoot(RealmHealthService.ParseBootStatus(
+            """{"state":"booting","stage":"world","bots_online":0,"bots_target":0,"since":1792688400,"updated":1792688600}""", bootNow)) == "the world is loading");
+        check("the last stage reads as login opening", MainViewModel.DescribeBoot(RealmHealthService.ParseBootStatus(
+            """{"state":"booting","stage":"login","bots_online":0,"bots_target":0,"since":1792688400,"updated":1792688600}""", bootNow)) == "login is opening");
+        check("a booting status left by a server that stopped mid-boot is ignored", RealmHealthService.ParseBootStatus(
+            """{"state":"booting","stage":"world","bots_online":0,"bots_target":0,"since":1792688000,"updated":1792688300}""", bootNow) is null);
+        check("online and offline aren't booting",
+            RealmHealthService.ParseBootStatus("""{"state":"online","since":1792688400,"updated":1792688600}""", bootNow) is null
+            && RealmHealthService.ParseBootStatus("""{"state":"offline","since":1792688400,"updated":1792688600}""", bootNow) is null);
+        check("a broken file isn't booting", RealmHealthService.ParseBootStatus("<html>502</html>", bootNow) is null);
+
+        var closedPort = FreeTcpPort();
+        var authListener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        authListener.Start();
+        try
+        {
+            var openPort = ((IPEndPoint)authListener.LocalEndpoint).Port;
+            var closedRealm = new Portalkeeper.Models.RealmInfo { SchemaVersion = 1, Name = "Test", Address = "127.0.0.1", AuthPort = closedPort, WorldPort = closedPort };
+            var openRealm = new Portalkeeper.Models.RealmInfo { SchemaVersion = 1, Name = "Test", Address = "127.0.0.1", AuthPort = openPort, WorldPort = closedPort };
+            var health = new RealmHealthService(new HttpClient(portal));
+            var current = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            portal.Answer = _ => (200, $$"""{"state":"booting","stage":"bots","bots_online":5,"bots_target":9,"since":{{current - 60}},"updated":{{current}}}""");
+            var booting = await health.CheckAsync(closedRealm, "https://portal.test/realm/realm-status.json");
+            check("login closed + the realm says booting: Booting", booting is { State: Portalkeeper.Models.RealmHealthState.Booting, Boot.BotsOnline: 5 }
+                && portal.Last?.Path == "/realm/realm-status.json");
+            check("without a status URL the ports decide",
+                (await health.CheckAsync(closedRealm)).State == Portalkeeper.Models.RealmHealthState.Offline);
+            check("login open: the status file doesn't matter",
+                (await health.CheckAsync(openRealm, "https://portal.test/realm/realm-status.json")).State == Portalkeeper.Models.RealmHealthState.AuthOnly);
+            portal.Answer = _ => (404, "{}");
+            check("no status file: the ports decide",
+                (await health.CheckAsync(closedRealm, "https://portal.test/realm/realm-status.json")).State == Portalkeeper.Models.RealmHealthState.Offline);
+        }
+        finally
+        {
+            authListener.Stop();
+        }
+    }
+
+    private static int FreeTcpPort()
+    {
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
     }
 
     /// <summary>A portal that answers whatever <see cref="Answer"/> says and remembers the last request.</summary>
