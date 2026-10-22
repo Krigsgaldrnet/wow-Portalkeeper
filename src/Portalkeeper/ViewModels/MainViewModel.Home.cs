@@ -20,13 +20,26 @@ public sealed partial class MainViewModel
         RealmHealthState.AuthOnly => "Login only",
         RealmHealthState.WorldOnly => "World only",
         RealmHealthState.Offline => "Offline",
+        RealmHealthState.Booting => "Booting",
         _ => "Unknown"
+    };
+
+    public bool RealmBooting => RealmConfigured && _realmHealthState == RealmHealthState.Booting;
+
+    /// <summary>Where the boot is: the world server loading, or how many bots are in.</summary>
+    public string BootProgressText => DescribeBoot(_realmBoot);
+
+    public static string DescribeBoot(RealmBootStatus? boot) => boot switch
+    {
+        { Stage: "bots", BotsTarget: > 0 } => $"bots logging in ({boot.BotsOnline} of {boot.BotsTarget})",
+        { Stage: "bots" } => "bots logging in",
+        _ => "the world is loading"
     };
 
     public IBrush RealmStatusBrush => Brush.Parse(!RealmConfigured ? "#8E9AA5" : _realmHealthState switch
     {
         RealmHealthState.Online => "#3DDC84",
-        RealmHealthState.AuthOnly or RealmHealthState.WorldOnly => "#F2B84B",
+        RealmHealthState.AuthOnly or RealmHealthState.WorldOnly or RealmHealthState.Booting => "#F2B84B",
         RealmHealthState.Offline => "#E5604D",
         _ => "#8E9AA5"
     });
@@ -48,7 +61,7 @@ public sealed partial class MainViewModel
 
     public string CardIcon => Card switch
     {
-        HomeCard.Ready => "✓",
+        HomeCard.Ready => RealmBooting ? "↻" : "✓",
         HomeCard.Installing or HomeCard.NoClient => "↓",
         HomeCard.Syncing => "↻",
         HomeCard.Playing => "▶",
@@ -57,6 +70,7 @@ public sealed partial class MainViewModel
 
     public IBrush CardIconBrush => Brush.Parse(Card switch
     {
+        HomeCard.Ready when RealmBooting => "#F2B84B",
         HomeCard.Ready or HomeCard.Playing => "#3DDC84",
         HomeCard.Attention => "#F2B84B",
         _ => "#E8B64C"
@@ -70,7 +84,7 @@ public sealed partial class MainViewModel
             : ClientValid ? "Update your client to " + RealmBranding.LauncherName : "Install World of Warcraft",
         HomeCard.Syncing => _isInstallingRequired ? "Updating realm files" : "Checking realm files",
         HomeCard.Playing => "World of Warcraft is running",
-        HomeCard.Ready => "Your game is up to date",
+        HomeCard.Ready => RealmBooting ? "The realm is starting up" : "Your game is up to date",
         _ => "Needs attention"
     };
 
@@ -81,13 +95,16 @@ public sealed partial class MainViewModel
             : ClientValid ? "INSTALL WOW and pick this client's folder to update it in place (only files that differ are downloaded, "
                 + "files the realm doesn't ship are deleted, addons and settings stay), or pick another folder for a fresh copy."
             : "Download the realm's client. Pick a folder with a 3.3.5a client in it to use it as the base and download only what differs.",
-        HomeCard.Ready => HasRepairStatus ? RepairStatus : "Patches and addons are installed and verified.",
+        HomeCard.Ready => HasRepairStatus ? RepairStatus
+            : RealmBooting ? "Your game is up to date. Login opens once the realm is ready: "
+                + BootProgressText + "."
+            : "Patches and addons are installed and verified.",
         _ => LaunchStatus
     };
 
     public string EnterRealmSubText => Card switch
     {
-        HomeCard.Ready => "Game is up to date",
+        HomeCard.Ready => RealmBooting ? "Realm is starting up" : "Game is up to date",
         HomeCard.Playing => "Have fun out there",
         HomeCard.Syncing => _isInstallingRequired ? "Updating realm files..." : "Checking realm files...",
         HomeCard.Installing => "Downloading...",
@@ -111,6 +128,8 @@ public sealed partial class MainViewModel
     {
         OnPropertyChanged(nameof(RealmStatusText));
         OnPropertyChanged(nameof(RealmStatusBrush));
+        OnPropertyChanged(nameof(RealmBooting));
+        OnPropertyChanged(nameof(BootProgressText));
         OnPropertyChanged(nameof(Card));
         OnPropertyChanged(nameof(CardIsNoClient));
         OnPropertyChanged(nameof(CardIsInstalling));
