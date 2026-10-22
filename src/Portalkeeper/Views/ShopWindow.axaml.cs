@@ -57,6 +57,8 @@ public partial class ShopWindow : Window
             vm.SelectedCategory = category;
     }
 
+    private void ClearFilters_Click(object? sender, RoutedEventArgs e) => (DataContext as ShopViewModel)?.ClearFilters();
+
     private void Tile_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is ShopViewModel vm && (sender as Control)?.DataContext is ShopOfferView offer)
