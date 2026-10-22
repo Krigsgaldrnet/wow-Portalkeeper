@@ -1,0 +1,284 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Portalkeeper.ViewModels"
+             xmlns:views="using:Portalkeeper.Views"
+             x:Class="Portalkeeper.Views.CalendarPage"
+             x:DataType="vm:MainViewModel">
+
+  <!-- Evermore fork: the CALENDAR page: the realm's public events on a parchment month, the picked
+       day's events beside it (CalendarViewModel, asked again when a minute old). -->
+  <UserControl.Styles>
+    <Style Selector="Button.day">
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Margin" Value="1.5"/>
+      <Setter Property="CornerRadius" Value="2"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="VerticalAlignment" Value="Stretch"/>
+      <Setter Property="MinHeight" Value="52"/>
+    </Style>
+    <Style Selector="Button.day:pointerover">
+      <Setter Property="BorderThickness" Value="2"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*">
+    <views:PageBanner Grid.Row="0" Title="REALM CALENDAR" Subtitle="Public realm events. Select a day to see what's on.">
+      <StackPanel Orientation="Horizontal" Spacing="14">
+        <ProgressBar IsVisible="{Binding IsCalendarLoading}" IsIndeterminate="True" Width="80" Height="3"
+                     Foreground="#E8B64C" Background="#26FFFFFF" VerticalAlignment="Center" />
+        <!-- Month navigation, on the calendar's own view model -->
+        <Panel DataContext="{Binding Calendar}">
+          <StackPanel x:DataType="vm:CalendarViewModel" Orientation="Horizontal" Spacing="12"
+                      IsVisible="{Binding $parent[views:PageBanner].DataContext, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <Button Classes="nav" Content="◀" Click="Previous_Click" IsEnabled="{Binding CanPrevious}" Padding="12,6" ToolTip.Tip="Previous month" />
+            <TextBlock Classes="dragon-title" Text="{Binding MonthTitle}" FontSize="19" MinWidth="190" TextAlignment="Center" VerticalAlignment="Center" />
+            <Button Classes="nav" Content="▶" Click="Next_Click" IsEnabled="{Binding CanNext}" Padding="12,6" ToolTip.Tip="Next month" />
+          </StackPanel>
+        </Panel>
+      </StackPanel>
+    </views:PageBanner>
+
+    <Panel Grid.Row="1">
+      <!-- No feed -->
+      <views:DragonFrame IsVisible="{Binding HasCalendarStatus}" Ground="Marble" Padding="24,20" MaxWidth="520"
+                         HorizontalAlignment="Center" VerticalAlignment="Center">
+        <TextBlock Text="{Binding CalendarStatus}" Foreground="#D8CCBA" TextWrapping="Wrap" TextAlignment="Center" />
+      </views:DragonFrame>
+
+      <Panel IsVisible="{Binding Calendar, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <Panel DataContext="{Binding Calendar}">
+      <Grid x:DataType="vm:CalendarViewModel" RowDefinitions="*,Auto" Margin="18,12,18,0">
+
+        <Grid Grid.Row="0" ColumnDefinitions="*,300" ColumnSpacing="12">
+          <!-- Framed parchment calendar -->
+          <views:DragonFrame Grid.Column="0" Ground="None" Padding="5">
+            <Border Background="#C8B991"
+                    BorderBrush="#6B512C"
+                    BorderThickness="1"
+                    CornerRadius="2"
+                    Padding="6">
+              <Grid RowDefinitions="Auto,*">
+              <Grid Grid.Row="0" ColumnDefinitions="*,*,*,*,*,*,*" Margin="1,0,1,4">
+                <Border Grid.Column="0" Background="#392D22" BorderBrush="#8A693B" BorderThickness="1" Margin="1,0" Padding="5"><TextBlock Text="SUN" HorizontalAlignment="Center" Foreground="#F5D98E" FontWeight="Bold" FontSize="11"/></Border>
+                <Border Grid.Column="1" Background="#392D22" BorderBrush="#8A693B" BorderThickness="1" Margin="1,0" Padding="5"><TextBlock Text="MON" HorizontalAlignment="Center" Foreground="#F5D98E" FontWeight="Bold" FontSize="11"/></Border>
+                <Border Grid.Column="2" Background="#392D22" BorderBrush="#8A693B" BorderThickness="1" Margin="1,0" Padding="5"><TextBlock Text="TUE" HorizontalAlignment="Center" Foreground="#F5D98E" FontWeight="Bold" FontSize="11"/></Border>
+                <Border Grid.Column="3" Background="#392D22" BorderBrush="#8A693B" BorderThickness="1" Margin="1,0" Padding="5"><TextBlock Text="WED" HorizontalAlignment="Center" Foreground="#F5D98E" FontWeight="Bold" FontSize="11"/></Border>
+                <Border Grid.Column="4" Background="#392D22" BorderBrush="#8A693B" BorderThickness="1" Margin="1,0" Padding="5"><TextBlock Text="THU" HorizontalAlignment="Center" Foreground="#F5D98E" FontWeight="Bold" FontSize="11"/></Border>
+                <Border Grid.Column="5" Background="#392D22" BorderBrush="#8A693B" BorderThickness="1" Margin="1,0" Padding="5"><TextBlock Text="FRI" HorizontalAlignment="Center" Foreground="#F5D98E" FontWeight="Bold" FontSize="11"/></Border>
+                <Border Grid.Column="6" Background="#392D22" BorderBrush="#8A693B" BorderThickness="1" Margin="1,0" Padding="5"><TextBlock Text="SAT" HorizontalAlignment="Center" Foreground="#F5D98E" FontWeight="Bold" FontSize="11"/></Border>
+              </Grid>
+
+              <Grid Grid.Row="1">
+                <Image Source="/Assets/Calendar/parchment.png"
+                       Stretch="Fill"
+                       Opacity="0.28"
+                       IsHitTestVisible="False"/>
+              <ItemsControl ItemsSource="{Binding Days}"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <UniformGrid Columns="7" Rows="6"/>
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:CalendarDayCell">
+                    <Button Classes="day plain"
+                            Click="Day_Click"
+                            Background="{Binding Background}"
+                            BorderBrush="{Binding BorderBrush}"
+                            Opacity="{Binding CellOpacity}">
+                      <Grid RowDefinitions="Auto,*" MinHeight="52" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                        <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="6,5,5,2">
+                          <Border Background="#E92B2115"
+                                  BorderBrush="#8B6937"
+                                  BorderThickness="1"
+                                  CornerRadius="10"
+                                  Padding="6,1">
+                            <TextBlock Text="{Binding DayNumber}"
+                                       Foreground="#FFF0C4"
+                                       FontWeight="Bold"
+                                       FontSize="11"/>
+                          </Border>
+                          <TextBlock Grid.Column="1"
+                                     Text="{Binding TodayBadge}"
+                                     HorizontalAlignment="Right"
+                                     VerticalAlignment="Center"
+                                     Foreground="#73571E"
+                                     FontSize="9"
+                                     FontWeight="Bold"/>
+                        </Grid>
+
+                        <StackPanel Grid.Row="1" Margin="4,1,4,4" Spacing="1">
+                          <ItemsControl ItemsSource="{Binding Markers}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="vm:CalendarEventMarker">
+                                <Border Background="{Binding Background}"
+                                        BorderBrush="#55000000"
+                                        BorderThickness="1"
+                                        CornerRadius="{Binding CornerRadius}"
+                                        Margin="{Binding Margin}"
+                                        Padding="3,1">
+                                  <Grid ColumnDefinitions="16,*" ColumnSpacing="3">
+                                    <Image Source="{Binding Artwork}"
+                                           IsVisible="{Binding HasArtwork}"
+                                           Width="14"
+                                           Height="14"
+                                           Stretch="UniformToFill"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Center"/>
+                                    <TextBlock Text="{Binding IconGlyph}"
+                                               IsVisible="{Binding !HasArtwork}"
+                                               Foreground="{Binding Foreground}"
+                                               FontSize="9"
+                                               FontWeight="Bold"
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding Name}"
+                                               Foreground="{Binding Foreground}"
+                                               FontSize="9"
+                                               FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis"
+                                               MaxLines="1"/>
+                                  </Grid>
+                                </Border>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <TextBlock Text="{Binding OverflowCount, StringFormat='+{0} more'}"
+                                     IsVisible="{Binding HasOverflow}"
+                                     Foreground="#6A5230"
+                                     FontSize="9"
+                                     FontWeight="SemiBold"
+                                     Margin="3,0,0,0"/>
+                        </StackPanel>
+                      </Grid>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              </Grid>
+            </Grid>
+            </Border>
+          </views:DragonFrame>
+
+          <!-- Selected day -->
+          <views:DragonFrame Grid.Column="1" Ground="Marble" Padding="14,12">
+            <Grid RowDefinitions="Auto,*">
+              <StackPanel Margin="2,0,2,10">
+                <TextBlock Text="SELECTED DAY"
+                           Foreground="#D5AA50"
+                           FontSize="11"
+                           FontWeight="Bold"
+                           LetterSpacing="0.8"/>
+                <TextBlock Text="{Binding SelectedDayTitle}"
+                           Foreground="#F6F0E8"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"
+                           Margin="0,3,0,0"/>
+              </StackPanel>
+
+              <Grid Grid.Row="1">
+                <TextBlock Text="{Binding SelectedDayEmptyText}"
+                           IsVisible="{Binding !HasSelectedEvents}"
+                           Foreground="#7D8190"
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Top"/>
+                <ScrollViewer IsVisible="{Binding HasSelectedEvents}" VerticalScrollBarVisibility="Auto">
+                  <ItemsControl ItemsSource="{Binding SelectedEvents}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:CalendarEventDetailRow">
+                        <Border Background="#101A26"
+                                BorderBrush="#3B4653"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="9,7"
+                                Margin="0,3">
+                          <Grid ColumnDefinitions="46,*" ColumnSpacing="10" RowDefinitions="Auto,Auto">
+                            <Border Grid.RowSpan="2" Width="42"
+                                    Height="42"
+                                    Background="{Binding AccentBackground}"
+                                    CornerRadius="4"
+                                    BorderBrush="#8A693B"
+                                    BorderThickness="1"
+                                    VerticalAlignment="Top">
+                              <Grid>
+                                <Image Source="{Binding Artwork}"
+                                       IsVisible="{Binding HasArtwork}"
+                                       Width="38"
+                                       Height="38"
+                                       Stretch="UniformToFill"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding IconGlyph}"
+                                           IsVisible="{Binding !HasArtwork}"
+                                           Foreground="{Binding AccentForeground}"
+                                           FontSize="16"
+                                           FontWeight="Bold"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+                              </Grid>
+                            </Border>
+
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                              <TextBlock Text="{Binding Name}"
+                                         Foreground="#F6F0E8"
+                                         FontWeight="SemiBold"
+                                         FontSize="13"
+                                         TextWrapping="Wrap"/>
+                              <TextBlock Text="{Binding CategoryText}"
+                                         Foreground="#8EA1B5"
+                                         FontSize="10"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Grid.Row="1" Margin="0,4,0,0">
+                              <TextBlock Text="{Binding DateText}"
+                                         Foreground="#E0D6C9"
+                                         FontSize="11"/>
+                              <TextBlock Text="{Binding DetailText}"
+                                         Foreground="#9EAABC"
+                                         FontSize="10"
+                                         TextWrapping="Wrap"/>
+                            </StackPanel>
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+              </Grid>
+            </Grid>
+          </views:DragonFrame>
+        </Grid>
+
+        <!-- Feed status -->
+        <Border Grid.Row="1"
+                Background="Transparent"
+                BorderBrush="#3C301D"
+                BorderThickness="0,1,0,0"
+                Margin="0,8,0,0"
+                Padding="2,6,2,2">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="{Binding LoadStatus}"
+                       Foreground="#9CA5B2"
+                       FontSize="10"
+                       TextTrimming="CharacterEllipsis"/>
+            <TextBlock Grid.Column="1"
+                       Text="{Binding FeedRange}"
+                       Foreground="#706B79"
+                       FontSize="10"
+                       HorizontalAlignment="Right"/>
+          </Grid>
+        </Border>
+      </Grid>
+      </Panel>
+      </Panel>
+    </Panel>
+  </Grid>
+</UserControl>

@@ -1,6 +1,7 @@
-<!-- Evermore fork: DragonUI's look for the launcher's windows (DragonUI.cs). Included by a window's
-     Styles: its buttons become DragonUI's red buttons, except the ones with a look of their own
-     (link, chrome, gold, plain), and "inset" buttons are a filigree frame over marble. -->
+<!-- Evermore fork: DragonUI's look for the launcher's window and its pages (DragonUI.cs). Included by
+     the main window's Styles: buttons become DragonUI's red buttons, except the ones with a look of
+     their own (link, chrome, gold, plain), "inset" buttons are a filigree frame over marble, and
+     PageBanner is a page's header strip. -->
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="using:Portalkeeper.Views">
@@ -79,6 +80,31 @@
     <Style Selector="TextBlock.dragon-tagline">
         <Setter Property="LetterSpacing" Value="1" />
         <Setter Property="Foreground" Value="#8C8273" />
+    </Style>
+
+    <!-- A page's header strip (PageBanner): the realm skyline, the page's name and line, and the
+         page's own controls at the right. -->
+    <Style Selector="views|PageBanner">
+        <Setter Property="Height" Value="76" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border BorderBrush="#9A6D25" BorderThickness="0,0,0,2" ClipToBounds="True">
+                    <Grid>
+                        <Image Source="avares://Portalkeeper/Assets/Calendar/header-banner.png" Stretch="UniformToFill" Opacity="0.8" />
+                        <Border Background="#77030A10" />
+                        <Grid Margin="26,0,22,0" ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                            <StackPanel VerticalAlignment="Center" Spacing="1">
+                                <TextBlock Classes="dragon-title" Text="{TemplateBinding Title}" FontSize="24" />
+                                <TextBlock Text="{TemplateBinding Subtitle}" FontSize="12" Foreground="#D8C9A7" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <ContentPresenter Grid.Column="1" Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              VerticalAlignment="Center" HorizontalAlignment="Right" />
+                        </Grid>
+                    </Grid>
+                </Border>
+            </ControlTemplate>
+        </Setter>
     </Style>
 
     <!-- Check boxes in DragonUI's gold rather than the system accent -->

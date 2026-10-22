@@ -8,7 +8,7 @@ using Portalkeeper.Services;
 
 namespace Portalkeeper.ViewModels;
 
-// Evermore fork: the coin shop (CoinShopService, ShopWindow). The SHOP link shows once the portal
+// Evermore fork: the coin shop (CoinShopService, the SHOP page: MainViewModel.Pages.cs). The SHOP link shows once the portal
 // has answered a listing for this login; a realm without a shop answers 404 and the link stays
 // hidden. A portal that can't be asked, or a closed shop (503), is asked again after the next sync,
 // and by the realm status check while the world server is up, at most every 5 minutes: a closed
@@ -68,22 +68,8 @@ public sealed partial class MainViewModel
         _shopKnown = false;
         _shopRetryAfter = default;
         OnPropertyChanged(nameof(ShopAvailable));
-    }
-
-    // The open Shop window's view model: a self-update waits while it's buying (MainViewModel.Update.cs).
-    private ShopViewModel? _openShop;
-    private bool IsShopBuying => _openShop?.IsBuying == true;
-
-    /// <summary>A Shop window's view model for the current login, or null when there's no shop to open.</summary>
-    public ShopViewModel? CreateShop()
-    {
-        if (_session is not { } session || !ShopAvailable) return null;
-        return _openShop = new ShopViewModel(_coinShop, session);
-    }
-
-    public void ShopClosed(ShopViewModel shop)
-    {
-        if (ReferenceEquals(_openShop, shop)) _openShop = null;
+        CloseShop();
+        LeaveUnavailablePage();
     }
 
     /// <summary>The shop said the login is no longer good (401): back to the login screen, with its message.</summary>

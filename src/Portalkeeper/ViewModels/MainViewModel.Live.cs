@@ -86,6 +86,14 @@ public sealed partial class MainViewModel
     // World bosses only: the portal's count of every rare up isn't news to a player.
     public bool HasLiveBosses => Live?.Rares?.WorldBosses is { Count: > 0 };
     public string LiveBossesText => Live?.Rares?.WorldBosses is { Count: > 0 } bosses ? DescribeBosses(bosses) : "";
+    /// <summary>Green with every world boss up, yellow with some, red with none.</summary>
+    public IBrush LiveBossesBrush => Brush.Parse(Live?.Rares?.WorldBosses is { Count: > 0 } bosses ? BossesColour(bosses) : "#E5604D");
+
+    internal static string BossesColour(IReadOnlyList<RealmLiveBoss> bosses)
+    {
+        var up = bosses.Count(b => b.Up);
+        return up == 0 ? "#E5604D" : up == bosses.Count ? "#3DDC84" : "#F2B84B";
+    }
     public string RareMapUrl => RealmBranding.RareMapUrl;
 
     /// <summary>"in about 9 min", "in under a minute", "in about 2 h 5 min", "now".</summary>
@@ -214,6 +222,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(LiveEventsText));
         OnPropertyChanged(nameof(HasLiveBosses));
         OnPropertyChanged(nameof(LiveBossesText));
+        OnPropertyChanged(nameof(LiveBossesBrush));
         OnPropertyChanged(nameof(HasWhatsNew));
         OnPropertyChanged(nameof(WhatsNewTitle));
         OnPropertyChanged(nameof(WhatsNewItems));

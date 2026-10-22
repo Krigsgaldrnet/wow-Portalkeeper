@@ -7,27 +7,25 @@ using Portalkeeper.ViewModels;
 
 namespace Portalkeeper.Views;
 
-public partial class ManageAddonsWindow : Window
+/// <summary>The ADDONS page of the main window (the optional addons; the required ones look after themselves).</summary>
+public partial class AddonsPage : UserControl
 {
-    public ManageAddonsWindow()
-    {
-        InitializeComponent();
-    }
+    public AddonsPage() => InitializeComponent();
 
+    private Window? Owner => TopLevel.GetTopLevel(this) as Window;
 
     private async void Uninstall_Click(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainViewModel vm || sender is not Button { DataContext: AddonInfo addon }) return;
-        if (!await ConfirmRemoval.ShowAsync(this, addon.Definition.Name)) return;
+        if (DataContext is not MainViewModel vm || sender is not Button { DataContext: AddonInfo addon } || Owner is not { } owner) return;
+        if (!await ConfirmRemoval.ShowAsync(owner, addon.Definition.Name)) return;
         try { IsEnabled = false; await vm.RemoveInstalledAddonAsync(addon.Definition.Id); }
         catch (Exception ex) { IsEnabled = true; await ShowErrorAsync(ex.Message); }
         finally { IsEnabled = true; }
     }
-    private async void AddAddon_Click(
-        object? sender,
-        RoutedEventArgs e)
+
+    private async void AddAddon_Click(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainViewModel viewModel)
+        if (DataContext is not MainViewModel viewModel || Owner is not { } owner)
             return;
 
         var window = new AddAddonWindow
@@ -35,12 +33,10 @@ public partial class ManageAddonsWindow : Window
             DataContext = viewModel
         };
 
-        await window.ShowDialog(this);
+        await window.ShowDialog(owner);
     }
 
-    private async void RemovePersonalAddon_Click(
-        object? sender,
-        RoutedEventArgs e)
+    private async void RemovePersonalAddon_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainViewModel viewModel ||
             sender is not Button button ||
@@ -62,9 +58,7 @@ public partial class ManageAddonsWindow : Window
         }
     }
 
-    private async void AddonAction_Click(
-        object? sender,
-        RoutedEventArgs e)
+    private async void AddonAction_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainViewModel viewModel ||
             sender is not Button button ||
@@ -86,9 +80,7 @@ public partial class ManageAddonsWindow : Window
         }
     }
 
-    private async void UpdateAll_Click(
-        object? sender,
-        RoutedEventArgs e)
+    private async void UpdateAll_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainViewModel viewModel)
             return;
@@ -108,25 +100,15 @@ public partial class ManageAddonsWindow : Window
         }
     }
 
-    private async void Refresh_Click(
-        object? sender,
-        RoutedEventArgs e)
+    private async void Refresh_Click(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainViewModel viewModel)
-            return;
-
-        await viewModel.RefreshAddonsAsync();
-    }
-
-    private void Close_Click(
-        object? sender,
-        RoutedEventArgs e)
-    {
-        Close();
+        if (DataContext is MainViewModel viewModel)
+            await viewModel.RefreshAddonsAsync();
     }
 
     private async System.Threading.Tasks.Task ShowErrorAsync(string message)
     {
+        if (Owner is not { } owner) return;
         var dialog = new Window
         {
             Title = "Portalkeeper Addon Error",
@@ -158,6 +140,6 @@ public partial class ManageAddonsWindow : Window
         if (dialog.Content is Grid grid && grid.Children[1] is Button closeButton)
             closeButton.Click += (_, _) => dialog.Close();
 
-        await dialog.ShowDialog(this);
+        await dialog.ShowDialog(owner);
     }
 }

@@ -139,6 +139,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             _savedSettings.ShowTransmogrifiedAppearancesByRealm[ArmoryUrl] = value;
             OnPropertyChanged();
             SaveSettings();
+            if (_armoryUrlLoaded == ArmoryUrl) _armory?.SetTransmogPreference(value);
         }
     }
     private void SetTransmogSupported(bool supported)
@@ -470,6 +471,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             _clientValid = value;
 
             OnPropertyChanged();
+            LeaveUnavailablePage();
             OnPropertyChanged(nameof(ClientStatusSymbol));
             OnPropertyChanged(nameof(ClientButtonText));
             OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
@@ -978,10 +980,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CombatLogSharingOffered));
         OnPropertyChanged(nameof(CrashReportsOffered));
         OnPropertyChanged(nameof(ShopAvailable));
+        OnPropertyChanged(nameof(PatchNotesAvailable));
         OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
         UpdateLaunchReadinessStatus();
         NotifyHome();
         NotifyHomeInfo();
+        LeaveUnavailablePage();
     }
 
     // ---------------------------------------------------------

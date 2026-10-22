@@ -153,6 +153,21 @@ internal static partial class Program
         check("world bosses read as a count, not names",
             MainViewModel.DescribeBosses([new("Azuregos", "Azshara", true, null), new("Ysondre", "Duskwood", false, 1900000000)]) == "1 of 2 world bosses up"
             && MainViewModel.DescribeBosses([new("Azuregos", "Azshara", false, 1900000000)]) == "0 of 1 world boss up");
+        check("the world boss dot is green with every boss up, yellow with some, red with none",
+            MainViewModel.BossesColour([new("Azuregos", "Azshara", true, null), new("Ysondre", "Duskwood", true, null)]) == "#3DDC84"
+            && MainViewModel.BossesColour([new("Azuregos", "Azshara", true, null), new("Ysondre", "Duskwood", false, 1900000000)]) == "#F2B84B"
+            && MainViewModel.BossesColour([new("Azuregos", "Azshara", false, 1900000000)]) == "#E5604D");
+
+        // The PATCH NOTES page: the same notes by day, newest first, every line kept.
+        var days = PatchNotesViewModel.Group(news!.Notes);
+        check("patch notes page groups the notes by day, newest first",
+            days.Count >= 1 && days.Sum(d => d.Notes.Count) == news.Notes.Count
+            && days.Zip(days.Skip(1)).All(pair => string.CompareOrdinal(pair.First.Title, pair.Second.Title) != 0));
+        var pageItems = news!.Notes.Select(PatchNotesViewModel.ToItem).ToArray();
+        check("a new feature keeps its name and every line on the page",
+            pageItems[0] is { Tag: "NEW", Title: "Red Pandas", HasTitle: true } && pageItems[0].Lines.Count == news.Notes[0].Text.Count);
+        check("a change on the page is tagged CHANGE under its section", pageItems[1] is { Tag: "CHANGE", HasTitle: false } && pageItems[1].Section.Contains("Druid", StringComparison.OrdinalIgnoreCase));
+        check("a fix on the page is tagged FIX", pageItems[2] is { Tag: "FIX" });
 
         check("players online read without the bots (every bot is online once the realm is up)",
             MainViewModel.DescribePlayers(new(2, 2170)) == "2 players online" && MainViewModel.DescribePlayers(new(1, 0)) == "1 player online");

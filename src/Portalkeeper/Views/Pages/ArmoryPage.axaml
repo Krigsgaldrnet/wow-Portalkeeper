@@ -1,0 +1,770 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:Portalkeeper.Views"
+             xmlns:vm="using:Portalkeeper.ViewModels"
+             xmlns:models="using:Portalkeeper.Models"
+             xmlns:conv="using:Avalonia.Data.Converters"
+             x:Class="Portalkeeper.Views.ArmoryPage"
+             x:DataType="vm:MainViewModel">
+
+    <!-- Evermore fork: the ARMORY page: the realm's characters and their equipment (ArmoryViewModel,
+         asked again when a minute old). -->
+    <UserControl.Styles>
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#1A140E"/>
+            <Setter Property="Foreground" Value="#E9DFC9"/>
+            <Setter Property="BorderBrush" Value="#8C6A2E"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,8"/>
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="#1A140E"/>
+            <Setter Property="Foreground" Value="#E9DFC9"/>
+            <Setter Property="BorderBrush" Value="#8C6A2E"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,6"/>
+        </Style>
+        <Style Selector="ListBox">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <!-- DragonUI's warm highlight rather than the system accent -->
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#22E8B64C" />
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#3DE8B64C" />
+        </Style>
+    </UserControl.Styles>
+
+    <UserControl.Resources>
+        <DataTemplate x:Key="ArmoryItemTooltipTemplate"
+                      x:DataType="models:ArmoryEquipmentSlotView">
+            <Border Width="310"
+                    Background="#080B10"
+                    BorderBrush="{Binding AccentBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="12">
+                <StackPanel Spacing="3">
+                    <TextBlock Text="{Binding ItemName}"
+                               FontSize="15"
+                               FontWeight="Bold"
+                               Foreground="{Binding ItemNameBrush}"
+                               TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding Item.TransmogText}" Foreground="#C58AF9"
+                               IsVisible="{Binding Item.TransmogText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Item.ItemLevel, StringFormat='Item Level {0}'}"
+                               FontSize="11"
+                               Foreground="#FFD76A"/>
+                    <TextBlock IsVisible="{Binding Item.BindingText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.BindingText}"
+                               FontSize="11"
+                               Foreground="#F0F0F0"/>
+                    <TextBlock IsVisible="{Binding Item.TypeText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.TypeText}"
+                               FontSize="11"
+                               Foreground="#F0F0F0"/>
+                    <TextBlock IsVisible="{Binding Item.DamageText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.DamageText}"
+                               FontSize="11"
+                               Foreground="#F0F0F0"/>
+                    <TextBlock IsVisible="{Binding Item.SpeedText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.SpeedText}"
+                               FontSize="11"
+                               Foreground="#F0F0F0"/>
+                    <TextBlock IsVisible="{Binding Item.DpsText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.DpsText}"
+                               FontSize="10"
+                               Foreground="#B8B8B8"/>
+                    <TextBlock IsVisible="{Binding Item.ArmorText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.ArmorText}"
+                               FontSize="11"
+                               Foreground="#F0F0F0"/>
+                    <TextBlock IsVisible="{Binding Item.BlockText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.BlockText}"
+                               FontSize="11"
+                               Foreground="#F0F0F0"/>
+
+                    <TextBlock IsVisible="{Binding Item.StatsText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.StatsText}"
+                               FontSize="11"
+                               Foreground="#FFFFFF"
+                               TextWrapping="Wrap"/>
+                    <TextBlock IsVisible="{Binding Item.ResistancesText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.ResistancesText}"
+                               FontSize="11"
+                               Foreground="#FFFFFF"
+                               TextWrapping="Wrap"/>
+                    <ItemsControl ItemsSource="{Binding Item.SocketViews}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:ArmorySocketView">
+                                <StackPanel Margin="0,3,0,0" Spacing="2">
+                                    <TextBlock Text="{Binding Label}" FontSize="11" Foreground="#9D9D9D"/>
+                                    <Grid ColumnDefinitions="24,*" IsVisible="{Binding HasGem}">
+                                        <Image Source="{Binding Gem.IconImage}" Width="20" Height="20"
+                                               VerticalAlignment="Top"/>
+                                        <StackPanel Grid.Column="1" Spacing="1">
+                                            <TextBlock IsVisible="{Binding Gem.Name, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Gem.Name}" Foreground="{Binding Gem.QualityBrush}"
+                                                       FontSize="11" TextWrapping="Wrap"/>
+                                            <TextBlock IsVisible="{Binding Gem.ColorText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Gem.ColorText}" Foreground="#9D9D9D" FontSize="10"/>
+                                            <TextBlock IsVisible="{Binding Gem.EffectText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Gem.EffectText}" Foreground="#1EFF00"
+                                                       FontSize="11" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock IsVisible="{Binding Item.SocketBonusText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.SocketBonusText}" FontSize="11"
+                               Foreground="#1EFF00" TextWrapping="Wrap"/>
+                    <TextBlock IsVisible="{Binding Item.EnchantText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.EnchantText}" FontSize="11"
+                               Foreground="#1EFF00" TextWrapping="Wrap"/>
+                    <TextBlock IsVisible="{Binding Item.SpellsText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.SpellsText}" FontSize="11"
+                               Foreground="#1EFF00" TextWrapping="Wrap"/>
+
+                    <TextBlock IsVisible="{Binding Item.RequiredLevelText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.RequiredLevelText}"
+                               FontSize="11"
+                               Foreground="#FF5555"/>
+                    <TextBlock IsVisible="{Binding Item.DurabilityText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.DurabilityText}"
+                               FontSize="11"
+                               Foreground="#F0F0F0"/>
+                    <TextBlock IsVisible="{Binding Item.Description, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Text="{Binding Item.Description}"
+                               FontSize="11"
+                               FontStyle="Italic"
+                               Foreground="#FFD100"
+                               TextWrapping="Wrap"
+                               Margin="0,2,0,0"/>
+                    <TextBlock Text="{Binding EntryText}"
+                               FontSize="9"
+                               Foreground="#666666"
+                               Margin="0,3,0,0"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,*">
+        <views:PageBanner Grid.Row="0" Title="REALM ARMORY" Subtitle="Heroes, adventurers, and denizens of the realm">
+            <ProgressBar IsVisible="{Binding IsArmoryLoading}" IsIndeterminate="True" Width="120" Height="3"
+                         Foreground="#E8B64C" Background="#26FFFFFF" />
+        </views:PageBanner>
+
+        <Panel Grid.Row="1">
+            <!-- No feed -->
+            <views:DragonFrame IsVisible="{Binding HasArmoryStatus}" Ground="Marble" Padding="24,20" MaxWidth="520"
+                               HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="{Binding ArmoryStatus}" Foreground="#D8CCBA" TextWrapping="Wrap" TextAlignment="Center" />
+            </views:DragonFrame>
+
+            <Panel IsVisible="{Binding Armory, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <Panel DataContext="{Binding Armory}">
+            <Grid x:DataType="vm:ArmoryViewModel" RowDefinitions="*,Auto">
+            <Grid Grid.Row="0"
+                  Margin="18,12,18,0"
+                  ColumnDefinitions="300,*"
+                  ColumnSpacing="14">
+
+                <!-- Roster -->
+                <views:DragonFrame Ground="Marble" Padding="4">
+                    <Grid RowDefinitions="Auto,Auto,Auto,*">
+                        <Border Grid.Row="0"
+                                Background="Transparent"
+                                BorderBrush="#4D3B20"
+                                BorderThickness="0,0,0,1"
+                                Padding="13,10">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel>
+                                    <TextBlock Text="CHARACTER ROSTER"
+                                               FontWeight="Bold"
+                                               FontSize="13"
+                                               Foreground="#D5AA50"/>
+                                    <TextBlock Text="{Binding RosterSummary}"
+                                               FontSize="10"
+                                               Foreground="#8F8575"
+                                               Margin="0,3,0,0"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            Spacing="5"
+                                            VerticalAlignment="Center">
+                                    <Border Background="#1F170F"
+                                            BorderBrush="#3B3223"
+                                            BorderThickness="1"
+                                            CornerRadius="9"
+                                            Padding="7,3">
+                                        <TextBlock Text="{Binding TotalPlayers, StringFormat='{}{0:N0} P'}"
+                                                   FontSize="9"
+                                                   Foreground="#D0C4AD"/>
+                                    </Border>
+                                    <Border Background="#191426"
+                                            BorderBrush="#644B80"
+                                            BorderThickness="1"
+                                            CornerRadius="9"
+                                            Padding="7,3">
+                                        <TextBlock Text="{Binding TotalPlayerbots, StringFormat='{}{0:N0} B'}"
+                                                   FontSize="9"
+                                                   FontWeight="Bold"
+                                                   Foreground="#C7A0E9"/>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <TextBox Grid.Row="1"
+                                 Margin="10,10,10,6"
+                                 PlaceholderText="Search characters..."
+                                 Text="{Binding SearchText}"/>
+
+                        <ComboBox Grid.Row="2"
+                                  Margin="10,0,10,8"
+                                  ItemsSource="{Binding Filters}"
+                                  SelectedIndex="{Binding FilterIndex}"/>
+
+                        <ListBox Grid.Row="3"
+                                 Margin="6,0,6,6"
+                                 ItemsSource="{Binding Characters}"
+                                 SelectedItem="{Binding SelectedSummary}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:ArmoryCharacterSummary">
+                                    <Border Padding="10,7"
+                                            Margin="2"
+                                            Background="#1A140E"
+                                            BorderBrush="#332A1D"
+                                            BorderThickness="1"
+                                            CornerRadius="4">
+                                        <Grid ColumnDefinitions="44,*,Auto"
+                                              ColumnSpacing="9">
+                                            <Border Width="40"
+                                                    Height="40"
+                                                    Background="#241B12"
+                                                    BorderBrush="{Binding ClassAccentBrush}"
+                                                    BorderThickness="2"
+                                                    CornerRadius="20"
+                                                    VerticalAlignment="Center">
+                                                <StackPanel VerticalAlignment="Center"
+                                                            HorizontalAlignment="Center"
+                                                            Spacing="-2">
+                                                    <TextBlock Text="{Binding Level}"
+                                                               HorizontalAlignment="Center"
+                                                               FontSize="14"
+                                                               FontWeight="Bold"
+                                                               Foreground="#F1E0B8"/>
+                                                    <TextBlock Text="{Binding ClassInitial}"
+                                                               HorizontalAlignment="Center"
+                                                               FontSize="8"
+                                                               FontWeight="Bold"
+                                                               Foreground="{Binding ClassAccentBrush}"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <StackPanel Grid.Column="1"
+                                                        VerticalAlignment="Center"
+                                                        Spacing="1">
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontSize="14"
+                                                           FontWeight="Bold"
+                                                           Foreground="#E9DFC9"/>
+                                                <TextBlock Text="{Binding CompactSubtitle}"
+                                                           FontSize="10"
+                                                           Foreground="#9E9485"/>
+                                            </StackPanel>
+
+                                            <Border Grid.Column="2"
+                                                    Background="#181323"
+                                                    BorderBrush="#604777"
+                                                    BorderThickness="1"
+                                                    CornerRadius="9"
+                                                    Padding="6,3"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding TypeLabel}"
+                                                           FontSize="8"
+                                                           FontWeight="Bold"
+                                                           Foreground="#C7A0E9"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                </views:DragonFrame>
+
+                <!-- Character Sheet -->
+                <views:DragonFrame Grid.Column="1" Ground="Marble" Padding="4">
+
+                    <Grid>
+                        <StackPanel IsVisible="{Binding HasNoSelectedCharacter}"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Spacing="10">
+                            <TextBlock Text="◆"
+                                       HorizontalAlignment="Center"
+                                       FontSize="34"
+                                       Foreground="#6D542B"/>
+                            <TextBlock Text="SELECT A CHARACTER"
+                                       HorizontalAlignment="Center"
+                                       FontSize="20"
+                                       FontWeight="Bold"
+                                       Foreground="#D9BD7B"/>
+                            <TextBlock Text="Choose a hero from the roster to inspect their equipment."
+                                       HorizontalAlignment="Center"
+                                       FontSize="13"
+                                       Foreground="#887F72"/>
+                        </StackPanel>
+
+                        <Grid IsVisible="{Binding HasSelectedCharacter}"
+                              RowDefinitions="Auto,*">
+
+                            <!-- Identity -->
+                            <Border Grid.Row="0"
+                                    Background="Transparent"
+                                    BorderBrush="#4D3B20"
+                                    BorderThickness="0,0,0,1"
+                                    Padding="16,10">
+                                <Grid ColumnDefinitions="Auto,*,Auto"
+                                      ColumnSpacing="14">
+
+                                    <Border Width="56"
+                                            Height="56"
+                                            Background="#1A140E"
+                                            BorderBrush="{Binding SelectedCharacter.ClassAccentBrush}"
+                                            BorderThickness="3"
+                                            CornerRadius="28">
+                                        <StackPanel HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Spacing="-2">
+                                            <TextBlock Text="{Binding SelectedCharacter.ClassInitial}"
+                                                       HorizontalAlignment="Center"
+                                                       FontSize="21"
+                                                       FontWeight="Bold"
+                                                       Foreground="{Binding SelectedCharacter.ClassAccentBrush}"/>
+                                            <TextBlock Text="{Binding SelectedCharacter.Level}"
+                                                       HorizontalAlignment="Center"
+                                                       FontSize="10"
+                                                       Foreground="#D8CBAF"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <StackPanel Grid.Column="1"
+                                                VerticalAlignment="Center"
+                                                Spacing="1">
+                                        <TextBlock Text="{Binding SelectedCharacter.Name}"
+                                                   FontSize="24"
+                                                   FontWeight="Bold"
+                                                   Foreground="#F3D58C"/>
+                                        <TextBlock Text="{Binding SelectedCharacter.Subtitle}"
+                                                   FontSize="13"
+                                                   Foreground="#D0C09E"/>
+                                        <TextBlock Text="{Binding SelectedCharacter.FactionName}"
+                                                   FontSize="11"
+                                                   Foreground="{Binding SelectedCharacter.FactionAccentBrush}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="2"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
+                                                Spacing="5">
+                                        <Border Background="#21162F"
+                                                BorderBrush="#805CA2"
+                                                BorderThickness="1"
+                                                CornerRadius="11"
+                                                Padding="12,4"
+                                                IsVisible="{Binding SelectedCharacter.Playerbot}">
+                                            <TextBlock Text="PLAYERBOT"
+                                                       FontSize="10"
+                                                       FontWeight="Bold"
+                                                       Foreground="#D9B5F5"/>
+                                        </Border>
+
+                                        <TextBlock Text="{Binding SelectedCharacter.AverageItemLevel, StringFormat='AVG ILVL {0}'}"
+                                                   HorizontalAlignment="Right"
+                                                   FontSize="11"
+                                                   Foreground="#B8A98B"/>
+                                        <TextBlock Text="{Binding SelectedCharacter.EquippedCount, StringFormat='{}{0} / 19 SLOTS'}"
+                                                   HorizontalAlignment="Right"
+                                                   FontSize="10"
+                                                   Foreground="#81796E"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Paper doll area -->
+                            <Grid Grid.Row="1"
+                                  Margin="12"
+                                      RowDefinitions="*,Auto"
+                                      ColumnDefinitions="250,*,250"
+                                      ColumnSpacing="10"
+                                      RowSpacing="10">
+
+                                    <!-- Left-side slots -->
+                                    <ItemsControl Grid.Row="0"
+                                                  Grid.Column="0"
+                                                  ItemsSource="{Binding LeftEquipmentSlots}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="models:ArmoryEquipmentSlotView">
+                                                <Border Margin="0,0,0,4"
+                                                        Background="#17110B"
+                                                        BorderBrush="{Binding AccentBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        MinHeight="46">
+                                                    <ToolTip.Tip>
+                                                        <ContentControl Content="{Binding}"
+                                                                        ContentTemplate="{StaticResource ArmoryItemTooltipTemplate}"/>
+                                                    </ToolTip.Tip>
+                                                    <Grid ColumnDefinitions="46,*">
+                                                        <Border Background="#211910"
+                                                                BorderBrush="{Binding AccentBrush}"
+                                                                BorderThickness="0,0,2,0"
+                                                                CornerRadius="4,0,0,4">
+                                                            <Grid>
+                                                                <StackPanel HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"
+                                                                            Spacing="1">
+                                                                    <TextBlock Text="{Binding SlotAbbreviation}"
+                                                                               FontSize="13"
+                                                                               FontWeight="Bold"
+                                                                               Foreground="{Binding AccentBrush}"
+                                                                               HorizontalAlignment="Center"/>
+                                                                    <TextBlock Text="{Binding SlotName}"
+                                                                               FontSize="7"
+                                                                               Foreground="#877F74"
+                                                                               HorizontalAlignment="Center"/>
+                                                                </StackPanel>
+                                                                <Image Source="{Binding IconImage}"
+                                                                       Width="42"
+                                                                       Height="42"
+                                                                       Stretch="UniformToFill"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center"/>
+                                                            </Grid>
+                                                        </Border>
+                                                        <StackPanel Grid.Column="1"
+                                                                    Margin="8,4"
+                                                                    VerticalAlignment="Center"
+                                                                    Spacing="1">
+                                                            <TextBlock Text="{Binding ItemName}"
+                                                                       FontSize="11.5"
+                                                                       FontWeight="Bold"
+                                                                       Foreground="{Binding ItemNameBrush}"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding ItemDetail}"
+                                                                       FontSize="9"
+                                                                       Foreground="#8E8578"/>
+                                                            <TextBlock Text="{Binding EntryText}"
+                                                                       FontSize="8"
+                                                                       Foreground="#5F5A53"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- Center "paper doll" -->
+                                    <Border Grid.Row="0"
+                                            Grid.Column="1"
+                                            Background="#150F0A"
+                                            BorderBrush="#4C3A20"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            MinWidth="260">
+                                        <Grid RowDefinitions="Auto,*,Auto">
+
+                                            <StackPanel Grid.Row="0"
+                                                        Margin="16,10,16,0"
+                                                        HorizontalAlignment="Center"
+                                                        Spacing="2">
+                                                <TextBlock Text="{Binding SelectedCharacter.ClassName}"
+                                                           HorizontalAlignment="Center"
+                                                           FontSize="12"
+                                                           FontWeight="Bold"
+                                                           Foreground="{Binding SelectedCharacter.ClassAccentBrush}"/>
+                                                <TextBlock Text="{Binding SelectedCharacter.RaceName}"
+                                                           HorizontalAlignment="Center"
+                                                           FontSize="10"
+                                                           Foreground="#9C9284"/>
+                                            </StackPanel>
+
+                                            <Grid Grid.Row="1" Margin="8" RowDefinitions="*,Auto">
+                                                <Image x:Name="CharacterPreviewImage" Grid.Row="0"
+                                                       Source="{Binding PreviewImage}" IsVisible="{Binding HasPreview}"
+                                                       Stretch="Uniform" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+                                            <Grid IsVisible="{Binding ShowPreviewFallback}">
+                                                <Ellipse Width="150"
+                                                         Height="150"
+                                                         Fill="#0E1D28"
+                                                         Stroke="#3A3021"
+                                                         StrokeThickness="2"
+                                                         HorizontalAlignment="Center"
+                                                         VerticalAlignment="Center"/>
+                                                <Ellipse Width="185"
+                                                         Height="185"
+                                                         Fill="#0A151D"
+                                                         Stroke="{Binding SelectedCharacter.ClassAccentBrush}"
+                                                         StrokeThickness="1"
+                                                         Opacity="0.9"
+                                                         HorizontalAlignment="Center"
+                                                         VerticalAlignment="Center"/>
+                                                <StackPanel HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            Spacing="4">
+                                                    <TextBlock Text="{Binding SelectedCharacter.ClassInitial}"
+                                                               HorizontalAlignment="Center"
+                                                               FontSize="60"
+                                                               FontWeight="Bold"
+                                                               Foreground="{Binding SelectedCharacter.ClassAccentBrush}"
+                                                               Opacity="0.88"/>
+                                                    <TextBlock Text="{Binding SelectedCharacter.Name}"
+                                                               HorizontalAlignment="Center"
+                                                               FontSize="16"
+                                                               FontWeight="Bold"
+                                                               Foreground="#EBD7AA"/>
+                                                    <TextBlock Text="{Binding SelectedCharacter.FactionName}"
+                                                               HorizontalAlignment="Center"
+                                                               FontSize="10"
+                                                               Foreground="{Binding SelectedCharacter.FactionAccentBrush}"/>
+                                                    <TextBlock Text="{Binding SelectedCharacter.Appearance.DebugSummary}"
+                                                               HorizontalAlignment="Center"
+                                                               FontSize="8"
+                                                               Foreground="#5E5A54"
+                                                               Margin="0,4,0,0"/>
+                                                </StackPanel>
+
+                                                <Border Width="206"
+                                                        Height="206"
+                                                        BorderBrush="#2E261B"
+                                                        BorderThickness="1"
+                                                        CornerRadius="103"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"/>
+                                            </Grid>
+
+                                                <StackPanel Grid.Row="1" Spacing="4" Margin="8,3">
+                                                    <ProgressBar IsVisible="{Binding LoadingPreview}" IsIndeterminate="True" Height="3"/>
+                                                    <TextBlock Text="{Binding PreviewStatus}" FontSize="10" Foreground="#9C9284"
+                                                               TextWrapping="Wrap" TextAlignment="Center"
+                                                               IsVisible="{Binding PreviewStatus, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"/>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <Grid Grid.Row="2"
+                                                  Margin="14,0,14,12"
+                                                  ColumnDefinitions="*,*,*"
+                                                  ColumnSpacing="7">
+                                                <Border Background="#1A140E"
+                                                        BorderBrush="#342A1D"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="8,5">
+                                                    <StackPanel>
+                                                        <TextBlock Text="EQUIPPED"
+                                                                   FontSize="8"
+                                                                   Foreground="#81786B"/>
+                                                        <TextBlock Text="{Binding SelectedCharacter.EquippedCount}"
+                                                                   FontSize="16"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="#E6D2A4"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <Border Grid.Column="1"
+                                                        Background="#1A140E"
+                                                        BorderBrush="#342A1D"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="8,5">
+                                                    <StackPanel>
+                                                        <TextBlock Text="AVG ILVL"
+                                                                   FontSize="8"
+                                                                   Foreground="#81786B"/>
+                                                        <TextBlock Text="{Binding SelectedCharacter.AverageItemLevel}"
+                                                                   FontSize="16"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="#E6D2A4"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <Border Grid.Column="2"
+                                                        Background="#1A140E"
+                                                        BorderBrush="#342A1D"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="8,5">
+                                                    <StackPanel>
+                                                        <TextBlock Text="BEST ILVL"
+                                                                   FontSize="8"
+                                                                   Foreground="#81786B"/>
+                                                        <TextBlock Text="{Binding SelectedCharacter.HighestItemLevel}"
+                                                                   FontSize="16"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="#E6D2A4"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Right-side slots -->
+                                    <ItemsControl Grid.Row="0"
+                                                  Grid.Column="2"
+                                                  ItemsSource="{Binding RightEquipmentSlots}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="models:ArmoryEquipmentSlotView">
+                                                <Border Margin="0,0,0,4"
+                                                        Background="#17110B"
+                                                        BorderBrush="{Binding AccentBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        MinHeight="46">
+                                                    <ToolTip.Tip>
+                                                        <ContentControl Content="{Binding}"
+                                                                        ContentTemplate="{StaticResource ArmoryItemTooltipTemplate}"/>
+                                                    </ToolTip.Tip>
+                                                    <Grid ColumnDefinitions="*,46">
+                                                        <StackPanel Margin="8,4"
+                                                                    VerticalAlignment="Center"
+                                                                    Spacing="1">
+                                                            <TextBlock Text="{Binding ItemName}"
+                                                                       FontSize="11.5"
+                                                                       FontWeight="Bold"
+                                                                       Foreground="{Binding ItemNameBrush}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       TextAlignment="Right"/>
+                                                            <TextBlock Text="{Binding ItemDetail}"
+                                                                       FontSize="9"
+                                                                       Foreground="#8E8578"
+                                                                       TextAlignment="Right"/>
+                                                            <TextBlock Text="{Binding EntryText}"
+                                                                       FontSize="8"
+                                                                       Foreground="#5F5A53"
+                                                                       TextAlignment="Right"/>
+                                                        </StackPanel>
+                                                        <Border Grid.Column="1"
+                                                                Background="#211910"
+                                                                BorderBrush="{Binding AccentBrush}"
+                                                                BorderThickness="2,0,0,0"
+                                                                CornerRadius="0,4,4,0">
+                                                            <Grid>
+                                                                <StackPanel HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"
+                                                                            Spacing="1">
+                                                                    <TextBlock Text="{Binding SlotAbbreviation}"
+                                                                               FontSize="13"
+                                                                               FontWeight="Bold"
+                                                                               Foreground="{Binding AccentBrush}"
+                                                                               HorizontalAlignment="Center"/>
+                                                                    <TextBlock Text="{Binding SlotName}"
+                                                                               FontSize="7"
+                                                                               Foreground="#877F74"
+                                                                               HorizontalAlignment="Center"/>
+                                                                </StackPanel>
+                                                                <Image Source="{Binding IconImage}"
+                                                                       Width="42"
+                                                                       Height="42"
+                                                                       Stretch="UniformToFill"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center"/>
+                                                            </Grid>
+                                                        </Border>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- Bottom jewelry + weapons -->
+                                    <Border Grid.Row="1"
+                                            Grid.ColumnSpan="3"
+                                            Background="#150F0A"
+                                            BorderBrush="#43351F"
+                                            BorderThickness="1"
+                                            CornerRadius="5"
+                                            Padding="8">
+                                        <ItemsControl ItemsSource="{Binding BottomEquipmentSlots}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel Orientation="Horizontal"
+                                                               HorizontalAlignment="Center"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="models:ArmoryEquipmentSlotView">
+                                                    <Border Width="124"
+                                                            Height="60"
+                                                            Margin="3"
+                                                            Background="#120D08"
+                                                            BorderBrush="{Binding AccentBrush}"
+                                                            BorderThickness="1"
+                                                            CornerRadius="4">
+                                                        <ToolTip.Tip>
+                                                            <ContentControl Content="{Binding}"
+                                                                            ContentTemplate="{StaticResource ArmoryItemTooltipTemplate}"/>
+                                                        </ToolTip.Tip>
+                                                        <Grid ColumnDefinitions="44,*"
+                                                              Margin="4">
+                                                            <Border Background="#211910"
+                                                                    BorderBrush="{Binding AccentBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="3"
+                                                                    Width="40"
+                                                                    Height="40"
+                                                                    VerticalAlignment="Center">
+                                                                <Grid>
+                                                                    <TextBlock Text="{Binding SlotAbbreviation}"
+                                                                               HorizontalAlignment="Center"
+                                                                               VerticalAlignment="Center"
+                                                                               FontSize="13"
+                                                                               FontWeight="Bold"
+                                                                               Foreground="{Binding AccentBrush}"/>
+                                                                    <Image Source="{Binding IconImage}"
+                                                                           Width="38"
+                                                                           Height="38"
+                                                                           Stretch="UniformToFill"
+                                                                           HorizontalAlignment="Center"
+                                                                           VerticalAlignment="Center"/>
+                                                                </Grid>
+                                                            </Border>
+                                                            <StackPanel Grid.Column="1"
+                                                                        VerticalAlignment="Center"
+                                                                        Margin="5,0,0,0"
+                                                                        Spacing="2">
+                                                                <TextBlock Text="{Binding SlotName}"
+                                                                           FontSize="7"
+                                                                           Foreground="#80786D"/>
+                                                                <TextBlock Text="{Binding ItemName}"
+                                                                           FontSize="8"
+                                                                           FontWeight="Bold"
+                                                                           Foreground="{Binding ItemNameBrush}"
+                                                                           TextTrimming="CharacterEllipsis"
+                                                                           MaxWidth="68"/>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Border>
+
+                            </Grid>
+                        </Grid>
+                    </Grid>
+                </views:DragonFrame>
+            </Grid>
+
+            <Border Grid.Row="1"
+                    Background="Transparent"
+                    BorderBrush="#40331E"
+                    BorderThickness="0,1,0,0"
+                    Margin="18,8,18,0"
+                    Padding="2,6,2,2">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="{Binding Status}"
+                               Foreground="#8F8577"
+                               FontSize="10"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1"
+                               Text="Loading character profile..."
+                               IsVisible="{Binding LoadingProfile}"
+                               Foreground="#C1A464"
+                               FontSize="10"/>
+                </Grid>
+            </Border>
+            </Grid>
+            </Panel>
+            </Panel>
+        </Panel>
+    </Grid>
+</UserControl>

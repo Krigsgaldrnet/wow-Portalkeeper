@@ -1,0 +1,101 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Portalkeeper.ViewModels"
+             xmlns:views="using:Portalkeeper.Views"
+             x:Class="Portalkeeper.Views.PatchNotesPage"
+             x:DataType="vm:MainViewModel">
+
+    <!-- Evermore fork: the PATCH NOTES page: what changed on the realm in the last 90 days, by day,
+         newest first (PatchNotesViewModel). The full notes stay on the website. -->
+    <Panel DataContext="{Binding PatchNotes}">
+    <Grid x:DataType="vm:PatchNotesViewModel" RowDefinitions="Auto,*,Auto">
+
+        <views:PageBanner Grid.Row="0" Title="PATCH NOTES" Subtitle="What changed on the realm, newest first">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button Classes="link" Content="FULL NOTES ON THE WEBSITE" Click="Website_Click" FontSize="11"
+                        VerticalAlignment="Center" ToolTip.Tip="{Binding Url}" />
+                <Button Content="REFRESH" Click="Refresh_Click" IsEnabled="{Binding CanRefresh}" Padding="14,8" />
+            </StackPanel>
+        </views:PageBanner>
+
+        <Panel Grid.Row="1" Margin="18,12,18,0">
+            <ScrollViewer IsVisible="{Binding HasNotes}" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Days}" Margin="0,0,14,0">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Spacing="12" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PatchNotesDay">
+                            <views:DragonFrame Ground="Marble" Padding="20,14">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Classes="dragon-title" Text="{Binding Title}" FontSize="15" />
+                                    <ItemsControl ItemsSource="{Binding Notes}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Spacing="10" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:PatchNoteItem">
+                                                <Grid ColumnDefinitions="76,*" ColumnSpacing="12">
+                                                    <Border BorderBrush="{Binding TagBrush}" BorderThickness="1" CornerRadius="9"
+                                                            Background="#33000000" Padding="8,2" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="0,2,0,0">
+                                                        <TextBlock Text="{Binding Tag}" Foreground="{Binding TagBrush}" FontSize="9" FontWeight="Bold" LetterSpacing="0.5" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Spacing="3">
+                                                        <TextBlock Text="{Binding Section}" Foreground="#AFA28D" FontSize="10" FontWeight="Bold" LetterSpacing="0.5" />
+                                                        <TextBlock Text="{Binding Title}" IsVisible="{Binding HasTitle}"
+                                                                   Foreground="#F6D477" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                        <ItemsControl ItemsSource="{Binding Lines}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <StackPanel Spacing="3" />
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="x:String">
+                                                                    <TextBlock Text="{Binding}" Foreground="#F2E7D0" FontSize="12.5" LineHeight="18" TextWrapping="Wrap" />
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </views:DragonFrame>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- First load -->
+            <StackPanel IsVisible="{Binding ShowFirstLoad}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Width="260">
+                <TextBlock Text="Reading the patch notes..." Foreground="#D8CCBA" HorizontalAlignment="Center" />
+                <ProgressBar IsIndeterminate="True" Height="3" Foreground="#E8B64C" Background="#26FFFFFF" />
+            </StackPanel>
+
+            <!-- Nothing to show -->
+            <views:DragonFrame IsVisible="{Binding ShowStatus}" Ground="Marble" Padding="24,20" MaxWidth="520"
+                               HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="{Binding Status}" Foreground="#D8CCBA" TextWrapping="Wrap" TextAlignment="Center" />
+                    <Button Content="TRY AGAIN" Click="Refresh_Click" IsEnabled="{Binding CanRefresh}" HorizontalAlignment="Center" Padding="16,8" />
+                </StackPanel>
+            </views:DragonFrame>
+        </Panel>
+
+        <!-- What didn't fit -->
+        <Border Grid.Row="2" BorderBrush="#3C301D" BorderThickness="0,1,0,0" Margin="18,10,18,0" Padding="2,8,2,4"
+                IsVisible="{Binding HasMore}">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="{Binding MoreText}" Foreground="#8C8273" FontSize="11" VerticalAlignment="Center" />
+                <Button Classes="link" Content="OPEN" Click="Website_Click" FontSize="11" Padding="0" />
+            </StackPanel>
+        </Border>
+    </Grid>
+    </Panel>
+</UserControl>
