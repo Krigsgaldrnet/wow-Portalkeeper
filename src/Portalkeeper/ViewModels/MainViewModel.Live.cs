@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media;
+using Portalkeeper.Models;
 using Portalkeeper.Services;
 
 namespace Portalkeeper.ViewModels;
@@ -49,10 +50,22 @@ public sealed partial class MainViewModel
 
     public bool HasLiveInfo => HasLivePlayers || HasLiveRestart || HasLiveEvents || HasLiveBosses;
 
-    public bool HasLivePlayers => Live?.Players is not null;
-    public string LivePlayersText => Live?.Players is { } p
-        ? $"{p.Online} player{(p.Online == 1 ? "" : "s")} online" + (p.Bots > 0 ? $" · {p.Bots} bots" : "")
-        : "";
+    // Players only, not bots: once the realm is up every bot is online, so the bot count never moves,
+    // and while it boots the status card counts the bots logging in (realm-status.json, every 10
+    // seconds) while the portal's count is a snapshot up to 30 seconds old, asked every 45.
+    public bool HasLivePlayers => Live?.Players is not null && ShowsPlayers(_realmHealthState);
+    public string LivePlayersText => Live?.Players is { } p ? DescribePlayers(p) : "";
+
+    /// <summary>
+    /// Whether the portal's online count means anything: not while the realm boots (nobody can log in
+    /// yet) or while its world server is down (the characters table still marks the last session online).
+    /// </summary>
+    internal static bool ShowsPlayers(RealmHealthState state) =>
+        state is not (RealmHealthState.Booting or RealmHealthState.Offline or RealmHealthState.AuthOnly);
+
+    /// <summary>"1 player online", "3 players online".</summary>
+    internal static string DescribePlayers(RealmLivePlayers players) =>
+        $"{players.Online} player{(players.Online == 1 ? "" : "s")} online";
 
     // A restart closer than this greys out ENTER REALM: not worth loading in for.
     private static readonly TimeSpan RestartBlocksEntryWithin = TimeSpan.FromMinutes(10);
