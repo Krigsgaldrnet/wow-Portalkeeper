@@ -135,7 +135,7 @@
 
         <!-- Header -->
         <Grid Grid.Row="0">
-            <Image Source="/Assets/Calendar/calendar-banner.png"
+            <Image Source="/Assets/Calendar/header-banner.png"
                    Stretch="UniformToFill"
                    Opacity="0.8"/>
             <Border Background="#77030A10"/>

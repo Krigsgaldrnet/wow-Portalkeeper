@@ -44,7 +44,7 @@
                 BorderBrush="#A06E1B"
                 BorderThickness="0,0,0,2">
             <Grid Height="96" ClipToBounds="True">
-                <Image Source="/Assets/Calendar/calendar-banner.png"
+                <Image Source="/Assets/Calendar/header-banner.png"
                        Stretch="UniformToFill"
                        Opacity="0.84" />
                 <Border Background="#79040A12" />

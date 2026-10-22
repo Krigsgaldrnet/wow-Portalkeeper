@@ -42,7 +42,7 @@
                 BorderBrush="#B77A20"
                 BorderThickness="0,1,0,2">
             <Grid ClipToBounds="True">
-                <Image Source="/Assets/Calendar/calendar-banner.png"
+                <Image Source="/Assets/Calendar/header-banner.png"
                        Stretch="UniformToFill"
                        Opacity="0.86" />
                 <Border Background="#65030A11" />
