@@ -1,6 +1,7 @@
 <Window
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Portalkeeper.Views"
     x:Class="Portalkeeper.Views.AddAddonWindow"
     Width="700"
     Height="520"
@@ -11,6 +12,7 @@
     Background="#091019">
 
     <Window.Styles>
+        <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml" />
         <Style Selector="Button">
             <Setter Property="Background" Value="#111A24" />
             <Setter Property="Foreground" Value="#F6D477" />
@@ -29,16 +31,20 @@
             <Setter Property="Opacity" Value="0.42" />
         </Style>
         <Style Selector="TextBox">
-            <Setter Property="Background" Value="#0E1823" />
+            <Setter Property="Background" Value="#1A140E" />
             <Setter Property="Foreground" Value="#F8F0DF" />
-            <Setter Property="BorderBrush" Value="#6E5426" />
+            <Setter Property="BorderBrush" Value="#8C6A2E" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="3" />
             <Setter Property="Padding" Value="11,8" />
+            <Setter Property="PlaceholderForeground" Value="#8C7F6A" />
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="Auto,*,Auto">
+    <Panel>
+    <!-- DragonUI: a rock ground in a bronze frame, sections as marble insets -->
+    <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
+    <Grid RowDefinitions="Auto,*,Auto" Margin="6,0,6,6">
         <Border Grid.Row="0"
                 Background="#0A1119"
                 BorderBrush="#A06E1B"
@@ -48,20 +54,8 @@
                        Stretch="UniformToFill"
                        Opacity="0.84" />
                 <Border Background="#79040A12" />
-                <Grid Margin="20,10" ColumnDefinitions="58,*">
-                    <Border Width="50" Height="50"
-                            CornerRadius="25"
-                            BorderBrush="#B77A20"
-                            BorderThickness="2"
-                            Background="#11131A"
-                            VerticalAlignment="Center">
-                        <Image Source="/Assets/portalkeeper-icon.png"
-                               Margin="3"
-                               Stretch="Uniform" />
-                    </Border>
-                    <StackPanel Grid.Column="1"
-                                Margin="14,0,0,0"
-                                VerticalAlignment="Center"
+                <Grid Margin="24,10">
+                    <StackPanel VerticalAlignment="Center"
                                 Spacing="2">
                         <TextBlock Text="ADD PERSONAL ADDON"
                                    Foreground="#FFD96B"
@@ -77,10 +71,7 @@
 
         <ScrollViewer Grid.Row="1">
             <StackPanel Margin="20,18" Spacing="14">
-                <Border Background="#0E1823"
-                        BorderBrush="#6E5426"
-                        BorderThickness="1"
-                        CornerRadius="4"
+                <views:DragonFrame Ground="Marble"
                         Padding="16">
                     <StackPanel Spacing="10">
                         <TextBlock Text="GITHUB REPOSITORY URL"
@@ -101,15 +92,12 @@
                                    FontSize="12"
                                    TextWrapping="Wrap" />
                     </StackPanel>
-                </Border>
+                </views:DragonFrame>
 
-                <Border x:Name="PreviewBorder"
+                <views:DragonFrame x:Name="PreviewBorder"
                         IsVisible="False"
                         Padding="16"
-                        Background="#0E1823"
-                        BorderBrush="#6E5426"
-                        BorderThickness="1"
-                        CornerRadius="4">
+                        Ground="Marble">
                     <StackPanel Spacing="9">
                         <TextBlock Text="FOUND ADDON"
                                    Foreground="#D5AA50"
@@ -135,12 +123,12 @@
                                        Foreground="#D8CCBA" TextWrapping="Wrap" />
                         </Grid>
                     </StackPanel>
-                </Border>
+                </views:DragonFrame>
             </StackPanel>
         </ScrollViewer>
 
         <Border Grid.Row="2"
-                Background="#081019"
+                Background="Transparent"
                 BorderBrush="#5B431B"
                 BorderThickness="0,1,0,0"
                 Padding="18,12">
@@ -163,4 +151,5 @@
             </Grid>
         </Border>
     </Grid>
+    </Panel>
 </Window>

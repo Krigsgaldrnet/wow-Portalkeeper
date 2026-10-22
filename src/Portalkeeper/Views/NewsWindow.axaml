@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Portalkeeper.Views"
         xmlns:vm="using:Portalkeeper.ViewModels"
         xmlns:models="using:Portalkeeper.Models"
         x:Class="Portalkeeper.Views.NewsWindow"
@@ -13,6 +14,7 @@
         Background="#07111A">
 
     <Window.Styles>
+        <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml" />
         <Style Selector="Button">
             <Setter Property="Background" Value="#101D29" />
             <Setter Property="Foreground" Value="#F1C65B" />
@@ -34,9 +36,19 @@
         <Style Selector="ListBoxItem:selected">
             <Setter Property="Background" Value="Transparent" />
         </Style>
+        <!-- DragonUI's warm highlight rather than the system accent -->
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#22E8B64C" />
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#3DE8B64C" />
+        </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="112,*,34">
+    <Panel>
+    <!-- DragonUI: a rock ground in a bronze frame, sections as marble insets -->
+    <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
+    <Grid RowDefinitions="112,*,34" Margin="6,0,6,6">
         <!-- Cinematic header -->
         <Border Grid.Row="0"
                 BorderBrush="#B77A20"
@@ -46,19 +58,8 @@
                        Stretch="UniformToFill"
                        Opacity="0.86" />
                 <Border Background="#65030A11" />
-                <Grid Margin="24,12" ColumnDefinitions="72,*,Auto" ColumnSpacing="14">
-                    <Border Width="64" Height="64"
-                            CornerRadius="32"
-                            BorderBrush="#C99527"
-                            BorderThickness="1"
-                            Background="#11131B"
-                            VerticalAlignment="Center">
-                        <Image Source="/Assets/portalkeeper-icon.png"
-                               Stretch="Uniform"
-                               Margin="4" />
-                    </Border>
-
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                <Grid Margin="24,12" ColumnDefinitions="*,Auto" ColumnSpacing="14">
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="1">
                         <TextBlock Text="REALM NEWS"
                                    FontSize="30"
                                    FontWeight="Bold"
@@ -68,7 +69,7 @@
                                    Foreground="#EEE4D1" />
                     </StackPanel>
 
-                    <StackPanel Grid.Column="2"
+                    <StackPanel Grid.Column="1"
                                 VerticalAlignment="Center"
                                 HorizontalAlignment="Right">
                         <TextBlock Text="PORTALKEEPER"
@@ -91,11 +92,8 @@
               ColumnDefinitions="360,12,*">
 
             <!-- Article index -->
-            <Border Grid.Column="0"
-                    Background="#0B1722"
-                    BorderBrush="#8A5B19"
-                    BorderThickness="1"
-                    CornerRadius="4"
+            <views:DragonFrame Grid.Column="0"
+                    Ground="Marble"
                     Padding="12">
                 <Grid RowDefinitions="Auto,8,*">
                     <StackPanel>
@@ -113,10 +111,8 @@
                              SelectedItem="{Binding SelectedArticle}">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="models:RealmNewsArticle">
-                                <Border Background="#101E2B"
-                                        BorderBrush="#3C3224"
-                                        BorderThickness="1"
-                                        CornerRadius="3"
+                                <views:DragonFrame Kind="SmallInset"
+                                        Ground="None"
                                         Padding="11">
                                     <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
                                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
@@ -155,24 +151,17 @@
                                                        Foreground="#777C80" />
                                         </StackPanel>
                                     </Grid>
-                                </Border>
+                                </views:DragonFrame>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
                 </Grid>
-            </Border>
+            </views:DragonFrame>
 
             <!-- Selected article -->
-            <Border Grid.Column="2"
-                    Background="#0A151F"
-                    BorderBrush="#8A5B19"
-                    BorderThickness="1"
-                    CornerRadius="4"
-                    Padding="4">
-                <Border BorderBrush="#3B2D18"
-                        BorderThickness="1"
-                        CornerRadius="3"
-                        Padding="22">
+            <views:DragonFrame Grid.Column="2"
+                    Ground="Marble"
+                    Padding="26">
                     <Grid>
                         <ScrollViewer IsVisible="{Binding HasSelection}"
                                       VerticalScrollBarVisibility="Auto">
@@ -240,15 +229,14 @@
                                        HorizontalAlignment="Center" />
                         </StackPanel>
                     </Grid>
-                </Border>
-            </Border>
+            </views:DragonFrame>
         </Grid>
 
         <!-- Footer -->
         <Border Grid.Row="2"
                 BorderBrush="#49351D"
                 BorderThickness="0,1,0,0"
-                Background="#07111A">
+                Background="Transparent">
             <Grid Margin="18,0" ColumnDefinitions="*,Auto" VerticalAlignment="Center">
                 <TextBlock Text="{Binding LoadStatus}"
                            FontSize="10"
@@ -260,4 +248,5 @@
             </Grid>
         </Border>
     </Grid>
+    </Panel>
 </Window>
