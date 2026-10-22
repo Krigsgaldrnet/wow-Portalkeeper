@@ -47,7 +47,7 @@ Its responsibilities include:
 * launching the client
 * supporting realm-specific requirements such as addons and patch files
 
-Portalkeeper does not distribute the World of Warcraft client.
+Upstream Portalkeeper does not distribute the World of Warcraft client; this fork does, only through the BitTorrent install described above.
 
 ## Supported Platforms
 
@@ -123,7 +123,7 @@ If a requested feature requires one of these behaviors to change, make that chan
 
 Portalkeeper works with a user's existing World of Warcraft 3.3.5a installation.
 
-Do not add functionality that assumes Portalkeeper distributes Blizzard client files.
+Apart from the fork's hash-verified BitTorrent client install (see above), do not add functionality that assumes Portalkeeper distributes Blizzard client files.
 
 Client-related functionality may inspect or manage files in the user's existing client installation when required for Portalkeeper features.
 
@@ -148,7 +148,7 @@ If validation must change, inspect the current validator and understand its assu
 
 ## Realm Configuration Files
 
-Realm configuration files are intended to become the authoritative source for realm-specific requirements.
+Realm configuration files (Schema v1) are the authoritative source for realm-specific requirements.
 
 When adding new realm configuration capabilities:
 
@@ -185,17 +185,15 @@ Do not broaden an addon-management change into an unrelated redesign of the laun
 
 ## Realm Patch Requirements
 
-Portalkeeper may support realm-specific client patch requirements.
+Portalkeeper supports realm-specific client patch requirements.
 
-The intended direction is for a realm configuration to describe which client patch files that realm requires.
-
-When this functionality is implemented, Portalkeeper should be able to determine whether the selected client satisfies those requirements before connecting to the realm.
+A realm configuration describes which client patch files that realm requires (`[Patch.<key>]` sections), and Portalkeeper determines whether the selected client satisfies them before connecting to the realm.
 
 Do not assume patch files are identical across realms.
 
-Do not distribute Blizzard-owned assets as part of Portalkeeper.
+Do not distribute Blizzard-owned assets as part of Portalkeeper (in the release package; the client torrent described above is the exception).
 
-Prefer validation and management of files already legitimately available to the user or supplied separately by the realm administrator.
+Prefer validation and management of files already legitimately available to the user or supplied by the realm (the realm's own patches and, in this fork, the hash-verified client torrent).
 
 ## Native Libraries
 
@@ -335,24 +333,3 @@ After completing an implementation task, report:
 * unrelated issues discovered but intentionally left unchanged
 
 Do not say a feature is complete merely because the code was written.
-
-## Working Style for OpenCode
-
-Prefer small, bounded tasks.
-
-A good task changes one coherent behavior or introduces one clearly defined implementation step.
-
-Avoid attempting an entire multi-stage feature in one implementation pass.
-
-For larger work:
-
-1. inspect the existing implementation
-2. divide the feature into independently understandable steps
-3. implement one step
-4. verify it
-5. review the result
-6. continue with the next step
-
-A clean OpenCode session is preferred when beginning a substantially different task.
-
-Use existing project context and code as the source of truth rather than inventing architecture that has not been requested.

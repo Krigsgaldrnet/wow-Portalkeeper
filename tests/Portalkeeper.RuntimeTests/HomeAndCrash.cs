@@ -14,20 +14,20 @@ internal static partial class Program
         ==============================================================================
         World of WarCraft: Retail Build (build 12340)
 
-        Exe:      C:\Users\RedPanda\Games\Evermore\Wow.exe
+        Exe:      C:\Users\Alice\Games\WoW\Wow.exe
         Time:     Oct 21, 2026  4:05:12.123 PM
-        User:     RedPanda
+        User:     Alice
         Computer: DESKTOP-ABC123
         ------------------------------------------------------------------------------
 
         This application has encountered a critical error:
 
         ERROR #132 (0x85100084) Fatal Exception
-        Program:	C:\Users\RedPanda\Games\Evermore\Wow.exe
+        Program:	C:\Users\Alice\Games\WoW\Wow.exe
         Exception:	0xC0000005 (ACCESS_VIOLATION) at 0023:0081d559
 
         The instruction at "0x0081D559" referenced memory at "0x00000000".
-        Loaded from DESKTOP-ABC123 by redpanda.
+        Loaded from DESKTOP-ABC123 by alice.
         """;
 
     private static async Task HomeAndCrashChecks(string root, Action<string, bool> check)
@@ -49,9 +49,9 @@ internal static partial class Program
             crash is { Files.Count: 1, Summary: "ERROR #132 · ACCESS_VIOLATION at 0081D559" });
         check("its file name is one the portal takes", crash?.Files[0].Name == "2026-10-21 16.05.12 _x_.txt");
 
-        var redacted = CrashReportService.Redact(CrashText, "redpanda", "DESKTOP-ABC123");
+        var redacted = CrashReportService.Redact(CrashText, "alice", "DESKTOP-ABC123");
         check("the User and Computer lines are taken out", redacted.Contains("User: (removed)") && redacted.Contains("Computer: (removed)"));
-        check("the user folder in paths is taken out", redacted.Contains(@"C:\Users\(user)\Games") && !redacted.Contains("RedPanda"));
+        check("the user folder in paths is taken out", redacted.Contains(@"C:\Users\(user)\Games") && !redacted.Contains("Alice"));
         check("the user and computer names are taken out anywhere else",
             redacted.Contains("Loaded from (removed) by (removed).") && !redacted.Contains("DESKTOP-ABC123"));
         check("a Wine home folder is taken out", CrashReportService.Redact("Z:/home/alice/wine/Wow.exe", "x", "y") == "Z:/home/(user)/wine/Wow.exe");

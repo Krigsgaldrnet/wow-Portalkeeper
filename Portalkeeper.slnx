@@ -3,7 +3,6 @@
     <Project Path="src/Portalkeeper/Portalkeeper.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/Portalkeeper.Tests/Portalkeeper.Tests.csproj" />
-    <Project Path="tests/Portalkeeper.UiTests/Portalkeeper.UiTests.csproj" />
+    <Project Path="tests/Portalkeeper.RuntimeTests/Portalkeeper.RuntimeTests.csproj" />
   </Folder>
 </Solution>
