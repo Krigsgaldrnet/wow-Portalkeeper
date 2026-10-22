@@ -7,6 +7,9 @@
         Title="Shop"
         Width="1120" Height="760"
         MinWidth="820" MinHeight="600"
+        WindowDecorations="BorderOnly"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="48"
         WindowStartupLocation="CenterOwner"
         RequestedThemeVariant="Dark"
         Background="#071019">
@@ -184,8 +187,9 @@
 
     <Grid>
         <!-- DragonUI: a rock ground in a bronze frame -->
-        <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
-        <Grid RowDefinitions="Auto,Auto,*,Auto" IsEnabled="{Binding !IsConfirming}" Margin="6,0,6,6">
+        <views:DragonFrame Kind="Bronze" Ground="Rock" Scale="1.6" IsHitTestVisible="False" />
+        <views:DragonTitleBar Title="{Binding $parent[Window].Title}" />
+        <Grid RowDefinitions="Auto,Auto,*,Auto" IsEnabled="{Binding !IsConfirming}" Margin="16,48,16,16">
 
             <!-- Header: title and wallet -->
             <Border Grid.Row="0" BorderBrush="#9A6D25" BorderThickness="0,0,0,2" Padding="30,18">

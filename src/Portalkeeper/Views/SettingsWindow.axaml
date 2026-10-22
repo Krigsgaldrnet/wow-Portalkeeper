@@ -10,6 +10,9 @@
     MinWidth="680"
     MinHeight="500"
     Title="Portalkeeper Settings"
+    WindowDecorations="BorderOnly"
+    ExtendClientAreaToDecorationsHint="True"
+    ExtendClientAreaTitleBarHeightHint="48"
     WindowStartupLocation="CenterOwner"
     Background="#091019">
 
@@ -39,8 +42,9 @@
 
     <Panel>
     <!-- DragonUI: a rock ground in a bronze frame, sections as marble insets -->
-    <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
-    <Grid RowDefinitions="Auto,*,Auto" Margin="6,0,6,6">
+    <views:DragonFrame Kind="Bronze" Ground="Rock" Scale="1.6" IsHitTestVisible="False" />
+    <views:DragonTitleBar Title="{Binding $parent[Window].Title}" />
+    <Grid RowDefinitions="Auto,*,Auto" Margin="16,48,16,16">
         <!-- Shared Portalkeeper cinematic header -->
         <Border Grid.Row="0"
                 Background="#0A1119"
@@ -56,10 +60,9 @@
                     <StackPanel Grid.Column="0"
                                 VerticalAlignment="Center"
                                 Spacing="2">
-                        <TextBlock Text="SETTINGS"
-                                   Foreground="#FFD96B"
-                                   FontSize="25"
-                                   FontWeight="Bold" />
+                        <TextBlock Classes="dragon-title"
+                                   Text="SETTINGS"
+                                   FontSize="25" />
                         <TextBlock Text="Client, realm, and launch preferences"
                                    Foreground="#E8DDC8"
                                    FontSize="13" />
@@ -69,14 +72,13 @@
                                 VerticalAlignment="Center"
                                 HorizontalAlignment="Right"
                                 Spacing="2">
-                        <TextBlock Text="PORTALKEEPER"
+                        <TextBlock Classes="dragon-brand"
+                                   Text="PORTALKEEPER"
                                    HorizontalAlignment="Right"
-                                   Foreground="#DCCAF2"
-                                   FontSize="12"
-                                   FontWeight="SemiBold" />
-                        <TextBlock Text="PLAN. PREPARE. PLAY."
+                                   FontSize="12" />
+                        <TextBlock Classes="dragon-tagline"
+                                   Text="PLAN. PREPARE. PLAY."
                                    HorizontalAlignment="Right"
-                                   Foreground="#8F7AA8"
                                    FontSize="9" />
                     </StackPanel>
                 </Grid>

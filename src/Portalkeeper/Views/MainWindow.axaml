@@ -17,7 +17,7 @@
     MinHeight="620"
     WindowDecorations="BorderOnly"
     ExtendClientAreaToDecorationsHint="True"
-    ExtendClientAreaTitleBarHeightHint="40"
+    ExtendClientAreaTitleBarHeightHint="48"
     Background="#05080D"
     WindowStartupLocation="CenterScreen">
 
@@ -75,7 +75,7 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="CornerRadius" Value="0" />
             <Setter Property="Width" Value="46" />
-            <Setter Property="Height" Value="40" />
+            <Setter Property="Height" Value="48" />
             <Setter Property="Foreground" Value="#D8CCBA" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
@@ -173,7 +173,7 @@
         <!-- DragonUI's bronze window frame; its title band is the top bar. -->
         <views:DragonFrame Kind="Bronze" Ground="None" Scale="1.6" IsHitTestVisible="False" />
 
-        <Grid RowDefinitions="40,*,Auto,30">
+        <Grid RowDefinitions="48,*,Auto,30">
 
             <!-- Top bar: drag to move -->
             <Grid Grid.Row="0" Background="Transparent" ColumnDefinitions="*,Auto"
@@ -405,7 +405,7 @@
 
         <!-- Login: the launcher is used with the player's game account -->
         <Grid Background="#E6040709" IsVisible="{Binding ShowLogin}">
-            <Grid RowDefinitions="40,*">
+            <Grid RowDefinitions="48,*">
                 <Grid Background="Transparent" ColumnDefinitions="*,Auto" PointerPressed="TitleBar_PointerPressed">
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,12,0">
                         <Button Classes="chrome" Content="—" Click="Minimize_Click" ToolTip.Tip="Minimize" />

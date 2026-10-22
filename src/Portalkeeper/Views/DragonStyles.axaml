@@ -53,6 +53,34 @@
         <Setter Property="Background" Value="#14FFE9A8" />
     </Style>
 
+    <!-- A window's header title: Cinzel in the main window logo's gold -->
+    <Style Selector="TextBlock.dragon-title">
+        <Setter Property="FontFamily" Value="avares://Portalkeeper/Assets/Fonts#Cinzel" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="LetterSpacing" Value="1.5" />
+        <Setter Property="Foreground">
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                <GradientStop Offset="0" Color="#FFF4CC" />
+                <GradientStop Offset="0.5" Color="#E8B64C" />
+                <GradientStop Offset="1" Color="#9C6B1E" />
+            </LinearGradientBrush>
+        </Setter>
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#88E8B64C" BlurRadius="14" OffsetX="0" OffsetY="0" />
+        </Setter>
+    </Style>
+    <!-- The small "PORTALKEEPER" mark at the header's right, and the line under it -->
+    <Style Selector="TextBlock.dragon-brand">
+        <Setter Property="FontFamily" Value="avares://Portalkeeper/Assets/Fonts#Cinzel" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="LetterSpacing" Value="2" />
+        <Setter Property="Foreground" Value="#D8CCBA" />
+    </Style>
+    <Style Selector="TextBlock.dragon-tagline">
+        <Setter Property="LetterSpacing" Value="1" />
+        <Setter Property="Foreground" Value="#8C8273" />
+    </Style>
+
     <!-- Check boxes in DragonUI's gold rather than the system accent -->
     <Style Selector="CheckBox:checked /template/ Border#NormalRectangle">
         <Setter Property="Background" Value="#3A2A14" />

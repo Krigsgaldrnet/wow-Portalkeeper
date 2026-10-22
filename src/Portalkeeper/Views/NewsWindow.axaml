@@ -10,6 +10,9 @@
         Height="720"
         MinWidth="900"
         MinHeight="620"
+        WindowDecorations="BorderOnly"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="48"
         WindowStartupLocation="CenterOwner"
         Background="#07111A">
 
@@ -47,8 +50,9 @@
 
     <Panel>
     <!-- DragonUI: a rock ground in a bronze frame, sections as marble insets -->
-    <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
-    <Grid RowDefinitions="112,*,34" Margin="6,0,6,6">
+    <views:DragonFrame Kind="Bronze" Ground="Rock" Scale="1.6" IsHitTestVisible="False" />
+    <views:DragonTitleBar Title="{Binding $parent[Window].Title}" />
+    <Grid RowDefinitions="112,*,34" Margin="16,48,16,16">
         <!-- Cinematic header -->
         <Border Grid.Row="0"
                 BorderBrush="#B77A20"
@@ -60,10 +64,9 @@
                 <Border Background="#65030A11" />
                 <Grid Margin="24,12" ColumnDefinitions="*,Auto" ColumnSpacing="14">
                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="1">
-                        <TextBlock Text="REALM NEWS"
-                                   FontSize="30"
-                                   FontWeight="Bold"
-                                   Foreground="#F1C65B" />
+                        <TextBlock Classes="dragon-title"
+                                   Text="REALM NEWS"
+                                   FontSize="30" />
                         <TextBlock Text="Announcements, improvements, maintenance, and realm updates"
                                    FontSize="13"
                                    Foreground="#EEE4D1" />
@@ -72,14 +75,13 @@
                     <StackPanel Grid.Column="1"
                                 VerticalAlignment="Center"
                                 HorizontalAlignment="Right">
-                        <TextBlock Text="PORTALKEEPER"
+                        <TextBlock Classes="dragon-brand"
+                                   Text="PORTALKEEPER"
                                    FontSize="14"
-                                   FontWeight="Bold"
-                                   Foreground="#D9B9EF"
                                    HorizontalAlignment="Right" />
-                        <TextBlock Text="STAY INFORMED"
+                        <TextBlock Classes="dragon-tagline"
+                                   Text="STAY INFORMED"
                                    FontSize="9"
-                                   Foreground="#8E78A8"
                                    HorizontalAlignment="Right" />
                     </StackPanel>
                 </Grid>

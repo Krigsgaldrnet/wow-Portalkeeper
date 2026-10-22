@@ -5,7 +5,9 @@
         xmlns:models="using:Portalkeeper.Models"
         x:Class="Portalkeeper.Views.RealmSelectionWindow" x:DataType="vm:MainViewModel"
         Width="640" Height="500" MinWidth="520" MinHeight="380"
-        Title="Change Realm" WindowStartupLocation="CenterOwner" Background="#091019">
+        Title="Change Realm" WindowDecorations="BorderOnly"
+        ExtendClientAreaToDecorationsHint="True" ExtendClientAreaTitleBarHeightHint="48"
+        WindowStartupLocation="CenterOwner" Background="#091019">
     <Window.Styles>
         <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml" />
         <Style Selector="Button">
@@ -35,14 +37,15 @@
     </Window.Styles>
     <Panel>
     <!-- DragonUI: a rock ground in a bronze frame, sections as marble insets -->
-    <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
-    <Grid RowDefinitions="Auto,*,Auto" Margin="6,0,6,6">
+    <views:DragonFrame Kind="Bronze" Ground="Rock" Scale="1.6" IsHitTestVisible="False" />
+    <views:DragonTitleBar Title="{Binding $parent[Window].Title}" />
+    <Grid RowDefinitions="Auto,*,Auto" Margin="16,48,16,16">
         <Border Padding="24,16" BorderBrush="#A06E1B" BorderThickness="0,0,0,2" ClipToBounds="True">
             <Border.Background>
                 <ImageBrush Source="/Assets/Calendar/header-banner.png" Stretch="UniformToFill" Opacity="0.55" />
             </Border.Background>
             <StackPanel Spacing="5">
-                <TextBlock Text="CHANGE REALM" Foreground="#FFD96B" FontSize="23" FontWeight="Bold" />
+                <TextBlock Classes="dragon-title" Text="CHANGE REALM" FontSize="23" />
                 <TextBlock Text="Current realm" Foreground="#AFA28D" FontSize="11" />
                 <TextBlock Text="{Binding RealmName}" Foreground="#F8F0DF" TextWrapping="Wrap" />
             </StackPanel>
