@@ -1,22 +1,14 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:Portalkeeper.ViewModels"
-        xmlns:views="using:Portalkeeper.Views"
-        x:Class="Portalkeeper.Views.ShopWindow"
-        x:DataType="vm:ShopViewModel"
-        Title="Shop"
-        Width="1120" Height="760"
-        MinWidth="820" MinHeight="600"
-        WindowDecorations="BorderOnly"
-        ExtendClientAreaToDecorationsHint="True"
-        ExtendClientAreaTitleBarHeightHint="48"
-        WindowStartupLocation="CenterOwner"
-        RequestedThemeVariant="Dark"
-        Background="#071019">
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Portalkeeper.ViewModels"
+             xmlns:views="using:Portalkeeper.Views"
+             x:Class="Portalkeeper.Views.ShopPage"
+             x:DataType="vm:MainViewModel">
 
-    <!-- Evermore fork: the coin shop. Tarnished Undermine Reals from the account's wallet buy mounts,
-         companions and character services for one character at a time. -->
-    <Window.Resources>
+    <!-- Evermore fork: the SHOP page. Tarnished Undermine Reals from the account's wallet buy mounts,
+         companions and character services for one character at a time. Its view model (Shop) lives
+         while the player is logged in (MainViewModel.Pages.cs). -->
+    <UserControl.Resources>
         <!-- Drawn icons for offers without a picture -->
         <StreamGeometry x:Key="HorseshoeIcon">F0 M 3.5,3 L 9,3 L 9.5,12 A 2.5,2.5 0 0 0 14.5,12 L 15,3 L 20.5,3 L 19,12 A 7,7 0 0 1 5,12 Z M 7.3,6 A 0.9,0.9 0 1 0 5.5,6 A 0.9,0.9 0 1 0 7.3,6 Z M 7.7,10 A 0.9,0.9 0 1 0 5.9,10 A 0.9,0.9 0 1 0 7.7,10 Z M 18.5,6 A 0.9,0.9 0 1 0 16.7,6 A 0.9,0.9 0 1 0 18.5,6 Z M 18.1,10 A 0.9,0.9 0 1 0 16.3,10 A 0.9,0.9 0 1 0 18.1,10 Z</StreamGeometry>
         <StreamGeometry x:Key="PawIcon">M 12,12.5 C 8,12.5 5.5,16.5 6.5,19 C 7.5,21.5 10,20.5 12,20.5 C 14,20.5 16.5,21.5 17.5,19 C 18.5,16.5 16,12.5 12,12.5 Z M 5,8.5 A 2,2.5 0 1 0 5,13.5 A 2,2.5 0 1 0 5,8.5 Z M 19,8.5 A 2,2.5 0 1 0 19,13.5 A 2,2.5 0 1 0 19,8.5 Z M 9,3.5 A 2,2.5 0 1 0 9,8.5 A 2,2.5 0 1 0 9,3.5 Z M 15,3.5 A 2,2.5 0 1 0 15,8.5 A 2,2.5 0 1 0 15,3.5 Z</StreamGeometry>
@@ -53,29 +45,9 @@
                 <GeometryDrawing Brush="#AA5A2810" Geometry="M 12,7.2 L 13.3,10.7 L 16.8,12 L 13.3,13.3 L 12,16.8 L 10.7,13.3 L 7.2,12 L 10.7,10.7 Z" />
             </DrawingGroup>
         </DrawingImage>
-    </Window.Resources>
+    </UserControl.Resources>
 
-    <Window.Styles>
-        <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml" />
-        <Style Selector="Button">
-            <Setter Property="Background" Value="#CC0B141E" />
-            <Setter Property="Foreground" Value="#F6D477" />
-            <Setter Property="BorderBrush" Value="#9A6B1E" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-        </Style>
-        <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#1B2A38" />
-            <Setter Property="BorderBrush" Value="#D2A43A" />
-            <Setter Property="Foreground" Value="#FFE9A8" />
-        </Style>
-        <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#990D1218" />
-            <Setter Property="Foreground" Value="#75694E" />
-            <Setter Property="BorderBrush" Value="#4E432C" />
-        </Style>
-
+    <UserControl.Styles>
         <Style Selector="Button.gold">
             <Setter Property="Background">
                 <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
@@ -85,6 +57,7 @@
                 </LinearGradientBrush>
             </Setter>
             <Setter Property="BorderBrush" Value="#FFE6A3" />
+            <Setter Property="CornerRadius" Value="6" />
             <Setter Property="Foreground" Value="#2A1A05" />
         </Style>
         <Style Selector="Button.gold:pointerover /template/ ContentPresenter#PART_ContentPresenter">
@@ -203,54 +176,36 @@
         <Style Selector="TextBlock.serif">
             <Setter Property="FontFamily" Value="avares://Portalkeeper/Assets/Fonts#Cinzel" />
         </Style>
-    </Window.Styles>
+    </UserControl.Styles>
 
-    <Grid>
-        <!-- DragonUI: a rock ground in a bronze frame -->
-        <views:DragonFrame Kind="Bronze" Ground="Rock" Scale="1.6" IsHitTestVisible="False" />
-        <views:DragonTitleBar Title="{Binding $parent[Window].Title}" />
-        <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" IsEnabled="{Binding !IsConfirming}" Margin="16,48,16,16">
+    <ThemeVariantScope RequestedThemeVariant="Dark">
+    <Panel DataContext="{Binding Shop}">
+    <Panel x:DataType="vm:ShopViewModel">
+        <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" IsEnabled="{Binding !IsConfirming}">
 
-            <!-- Header: title and wallet -->
-            <Border Grid.Row="0" BorderBrush="#9A6D25" BorderThickness="0,0,0,2" Padding="30,18">
-                <Border.Background>
-                    <ImageBrush Source="/Assets/Calendar/header-banner.png" Stretch="UniformToFill" Opacity="0.55" />
-                </Border.Background>
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="18">
-                    <StackPanel VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Classes="serif" Text="SHOP" FontSize="32" FontWeight="Bold" LetterSpacing="2">
-                            <TextBlock.Foreground>
-                                <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-                                    <GradientStop Offset="0" Color="#FFF4CC" />
-                                    <GradientStop Offset="0.5" Color="#E8B64C" />
-                                    <GradientStop Offset="1" Color="#9C6B1E" />
-                                </LinearGradientBrush>
-                            </TextBlock.Foreground>
-                        </TextBlock>
-                        <TextBlock Text="Spend the coins your bosses dropped. Bring coins to Pix Xizzix to add them to your wallet."
-                                   FontSize="12" Foreground="#AFA28D" TextWrapping="Wrap" />
-                    </StackPanel>
-
-                    <Border Grid.Column="1" IsVisible="{Binding HasBalance}"
-                            Background="#B31A140E" BorderBrush="#66E8B64C" BorderThickness="1" CornerRadius="8" Padding="14,8"
+            <!-- Header: wallet and refresh -->
+            <views:PageBanner Grid.Row="0" Title="SHOP"
+                              Subtitle="Spend the coins your bosses dropped. Bring coins to Pix Xizzix to add them to your wallet.">
+                <StackPanel Orientation="Horizontal" Spacing="14">
+                    <Border IsVisible="{Binding HasBalance}"
+                            Background="#B31A140E" BorderBrush="#66E8B64C" BorderThickness="1" CornerRadius="8" Padding="12,6"
                             VerticalAlignment="Center"
                             ToolTip.Tip="Your account's wallet. Every character on the account spends from it.">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <Image Source="{StaticResource CoinImage}" Width="34" Height="34" VerticalAlignment="Center" />
+                            <Image Source="{StaticResource CoinImage}" Width="30" Height="30" VerticalAlignment="Center" />
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="{Binding BalanceText}" FontSize="24" FontWeight="Bold" Foreground="#F6D477" />
-                                <TextBlock Text="{Binding BalanceCaption}" FontSize="11" Foreground="#AFA28D" />
+                                <TextBlock Text="{Binding BalanceText}" FontSize="20" FontWeight="Bold" Foreground="#F6D477" />
+                                <TextBlock Text="{Binding BalanceCaption}" FontSize="10" Foreground="#AFA28D" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
-
-                    <Button Grid.Column="2" Content="REFRESH" Click="Refresh_Click" IsEnabled="{Binding CanRefresh}"
+                    <Button Content="REFRESH" Click="Refresh_Click" IsEnabled="{Binding CanRefresh}"
                             VerticalAlignment="Center" Padding="14,8" />
-                </Grid>
-            </Border>
+                </StackPanel>
+            </views:PageBanner>
 
             <!-- Categories and the character it's for -->
-            <Grid Grid.Row="1" Margin="22,10,24,0" ColumnDefinitions="*,Auto" ColumnSpacing="16" IsVisible="{Binding ShowShop}">
+            <Grid Grid.Row="1" Margin="18,8,20,0" ColumnDefinitions="*,Auto" ColumnSpacing="16" IsVisible="{Binding ShowShop}">
                 <!-- Wraps to a second line in a narrow window or with many categories. -->
                 <ItemsControl ItemsSource="{Binding Categories}" VerticalAlignment="Bottom">
                     <ItemsControl.ItemsPanel>
@@ -292,8 +247,8 @@
             </Grid>
 
             <!-- Search, sort and show: narrow the tab and order its tiles -->
-            <Grid Grid.Row="2" Margin="22,8,24,0" ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="10" IsVisible="{Binding ShowShop}">
-                <TextBox Grid.Column="0" Width="240" Watermark="Search this tab..." Text="{Binding SearchText}"
+            <Grid Grid.Row="2" Margin="18,8,20,0" ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="10" IsVisible="{Binding ShowShop}">
+                <TextBox Grid.Column="0" Width="240" PlaceholderText="Search this tab..." Text="{Binding SearchText}"
                          VerticalAlignment="Center" />
                 <Button Grid.Column="1" Classes="clear plain" Content="CLEAR" Click="ClearFilters_Click" IsVisible="{Binding IsFiltered}"
                         VerticalAlignment="Center" ToolTip.Tip="Show everything in this tab again" />
@@ -320,10 +275,10 @@
             </Grid>
 
             <!-- Offers -->
-            <Grid Grid.Row="3" Margin="0,8,0,0">
+            <Grid Grid.Row="3" Margin="0,6,0,0">
                 <!-- Like the retail game's shop: tiles on the left, the picked one large on a stage on the right. -->
-                <Grid IsVisible="{Binding ShowShop}" ColumnDefinitions="Auto,*" Margin="22,6,22,16" ColumnSpacing="14">
-                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" Width="{Binding $parent[Window].Bounds.Width, Converter={x:Static views:ShopWindow.TileColumnWidth}}">
+                <Grid IsVisible="{Binding ShowShop}" ColumnDefinitions="Auto,*" Margin="18,4,18,0" ColumnSpacing="14">
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" Width="{Binding $parent[UserControl].Bounds.Width, Converter={x:Static views:ShopPage.TileColumnWidth}}">
                         <StackPanel Spacing="10" Margin="0,0,10,0">
                             <Border IsVisible="{Binding HasNoCharacters}" Classes="card" Padding="16,12">
                                 <TextBlock Text="This account has no characters yet. Make one in the game, then come back to buy something for it."
@@ -494,7 +449,7 @@
             </Grid>
 
             <!-- Status line: what the last purchase did -->
-            <Border Grid.Row="4" Background="Transparent" BorderBrush="#33FFFFFF" BorderThickness="0,1,0,0" Padding="24,10"
+            <Border Grid.Row="4" Background="Transparent" BorderBrush="#33FFFFFF" BorderThickness="0,1,0,0" Padding="20,8"
                     IsVisible="{Binding HasStatus}">
                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                     <ProgressBar Width="60" Height="3" IsIndeterminate="True" Foreground="#E8B64C" Background="#26FFFFFF"
@@ -528,5 +483,7 @@
                 </StackPanel>
             </views:DragonFrame>
         </Grid>
-    </Grid>
-</Window>
+    </Panel>
+    </Panel>
+    </ThemeVariantScope>
+</UserControl>

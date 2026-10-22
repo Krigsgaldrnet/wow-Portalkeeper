@@ -6,23 +6,26 @@
     xmlns:vm="using:Portalkeeper.ViewModels"
     xmlns:views="using:Portalkeeper.Views"
     mc:Ignorable="d"
-    d:DesignWidth="1100"
-    d:DesignHeight="660"
+    d:DesignWidth="1280"
+    d:DesignHeight="800"
     x:Class="Portalkeeper.Views.MainWindow"
     x:DataType="vm:MainViewModel"
     Title="Evermore"
-    Width="1100"
-    Height="660"
-    MinWidth="980"
-    MinHeight="620"
+    Width="1280"
+    Height="800"
+    MinWidth="1120"
+    MinHeight="720"
     WindowDecorations="BorderOnly"
     ExtendClientAreaToDecorationsHint="True"
     ExtendClientAreaTitleBarHeightHint="48"
     Background="#05080D"
+    RequestedThemeVariant="Dark"
     WindowStartupLocation="CenterScreen">
 
-    <!-- Evermore fork: one scene, like a game launcher. Realm, client, addons and sharing details
-         live in Settings; required patches and addons look after themselves. -->
+    <!-- Evermore fork: one window with pages, like a game launcher. The top bar's links switch the
+         page under it (home, shop, armory, calendar, patch notes, addons, and the settings gear); the
+         status card and ENTER REALM stay at the bottom of every page. Required patches and addons
+         look after themselves. -->
     <Window.Styles>
         <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml" />
         <Style Selector="Button">
@@ -57,6 +60,24 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="#FFE9A8" />
         </Style>
+        <Style Selector="Button.link:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#75694E" />
+        </Style>
+        <!-- The page that's open -->
+        <Style Selector="Button.link.nav">
+            <Setter Property="Padding" Value="4,13,4,11" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.link.nav.selected">
+            <Setter Property="Foreground" Value="#F6D477" />
+            <Setter Property="BorderBrush" Value="#E8B64C" />
+        </Style>
+        <Style Selector="Button.link.nav.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="BorderBrush" Value="#E8B64C" />
+        </Style>
 
         <!-- A line on the home screen that opens a page -->
         <Style Selector="Button.plain">
@@ -87,6 +108,13 @@
         <Style Selector="Button.close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#C42B1C" />
             <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.chrome.selected">
+            <Setter Property="Foreground" Value="#F6D477" />
+        </Style>
+        <Style Selector="Button.chrome:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#75694E" />
         </Style>
 
         <!-- The big gold button -->
@@ -175,26 +203,41 @@
 
         <Grid RowDefinitions="48,*,Auto,30">
 
-            <!-- Top bar: drag to move -->
+            <!-- Top bar: the pages, and drag to move -->
             <Grid Grid.Row="0" Background="Transparent" ColumnDefinitions="*,Auto"
                   PointerPressed="TitleBar_PointerPressed">
-                <StackPanel Orientation="Horizontal" Margin="22,0,0,0" Spacing="10" VerticalAlignment="Center">
-                    <Button Classes="link" Content="WEBSITE" Click="Website_Click" />
-                    <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" IsVisible="{Binding ArmoryAvailable}" />
-                    <Button Classes="link" Content="ARMORY" Click="Armory_Click" IsVisible="{Binding ArmoryAvailable}" />
+                <StackPanel Orientation="Horizontal" Margin="22,0,0,0" Spacing="10" VerticalAlignment="Center"
+                            IsEnabled="{Binding CanNavigate}">
+                    <Button Classes="link nav" Classes.selected="{Binding IsHomePage}" Content="HOME" Tag="Home" Click="Nav_Click" />
                     <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" IsVisible="{Binding ShopAvailable}" />
-                    <Button Classes="link" Content="SHOP" Click="Shop_Click" IsVisible="{Binding ShopAvailable}" />
+                    <Button Classes="link nav" Classes.selected="{Binding IsShopPage}" Content="SHOP" Tag="Shop" Click="Nav_Click" IsVisible="{Binding ShopAvailable}" />
+                    <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" IsVisible="{Binding ArmoryAvailable}" />
+                    <Button Classes="link nav" Classes.selected="{Binding IsArmoryPage}" Content="ARMORY" Tag="Armory" Click="Nav_Click" IsVisible="{Binding ArmoryAvailable}" />
+                    <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" IsVisible="{Binding CalendarAvailable}" />
+                    <Button Classes="link nav" Classes.selected="{Binding IsCalendarPage}" Content="CALENDAR" Tag="Calendar" Click="Nav_Click" IsVisible="{Binding CalendarAvailable}" />
+                    <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" IsVisible="{Binding PatchNotesAvailable}" />
+                    <Button Classes="link nav" Classes.selected="{Binding IsPatchNotesPage}" Content="PATCH NOTES" Tag="PatchNotes" Click="Nav_Click" IsVisible="{Binding PatchNotesAvailable}" />
                     <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" />
-                    <Button Classes="link" Content="PATCH NOTES" Click="PatchNotes_Click" />
+                    <Button Classes="link nav" Classes.selected="{Binding IsAddonsPage}" Content="ADDONS" Tag="Addons" Click="Nav_Click" IsEnabled="{Binding ClientValid}"
+                            ToolTip.Tip="Extra addons you can choose" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,12,0">
+                    <Button Classes="link" Content="WEBSITE" Click="Website_Click" Margin="0,0,10,0" ToolTip.Tip="Open the realm's website" />
+                    <Button Classes="chrome" Classes.selected="{Binding IsSettingsPage}" Click="Settings_Click" IsEnabled="{Binding CanNavigate}"
+                            ToolTip.Tip="Settings: client, addons, sharing, account">
+                        <!-- Drawn rather than the ⚙ character, which each OS draws from a different font. -->
+                        <Path Width="17" Height="17" Stretch="Uniform" Fill="{Binding $parent[Button].Foreground}"
+                              Data="F0 M 19.84,9.60 L 22.37,10.36 L 22.37,13.64 L 19.84,14.40 L 19.24,15.85 L 20.49,18.17 L 18.17,20.49 L 15.85,19.24 L 14.40,19.84 L 13.64,22.37 L 10.36,22.37 L 9.60,19.84 L 8.15,19.24 L 5.83,20.49 L 3.51,18.17 L 4.76,15.85 L 4.16,14.40 L 1.63,13.64 L 1.63,10.36 L 4.16,9.60 L 4.76,8.15 L 3.51,5.83 L 5.83,3.51 L 8.15,4.76 L 9.60,4.16 L 10.36,1.63 L 13.64,1.63 L 14.40,4.16 L 15.85,4.76 L 18.17,3.51 L 20.49,5.83 L 19.24,8.15 Z M 15.40,12 A 3.4,3.4 0 1 0 8.60,12 A 3.4,3.4 0 1 0 15.40,12 Z" />
+                    </Button>
                     <Button Classes="chrome" Content="—" Click="Minimize_Click" ToolTip.Tip="Minimize" />
                     <Button Classes="chrome close" Content="✕" Click="Close_Click" ToolTip.Tip="Close" />
                 </StackPanel>
             </Grid>
 
-            <!-- Logo and realm status -->
-            <Grid Grid.Row="1" Margin="40,26,32,0" ColumnDefinitions="*,Auto">
+            <!-- The page -->
+            <Panel Grid.Row="1">
+            <!-- Home: logo and realm status -->
+            <Grid IsVisible="{Binding IsHomePage}" Margin="40,26,32,0" ColumnDefinitions="*,Auto">
                 <StackPanel VerticalAlignment="Top" Spacing="2">
                     <TextBlock Classes="serif"
                                Text="{Binding LauncherTitle}"
@@ -244,15 +287,17 @@
                                 <Ellipse Width="7" Height="7" Fill="{Binding LiveRestartBrush}" VerticalAlignment="Center" />
                                 <TextBlock Text="{Binding LiveRestartText}" Foreground="{Binding LiveRestartBrush}" FontSize="12" FontWeight="SemiBold" />
                             </StackPanel>
+                            <!-- Green: an event is on. The calendar page has the details. -->
                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasLiveEvents}">
-                                <Ellipse Width="7" Height="7" Fill="#E8B64C" VerticalAlignment="Center" />
+                                <Ellipse Width="7" Height="7" Fill="#3DDC84" VerticalAlignment="Center" />
                                 <TextBlock Text="{Binding LiveEventsText}" Foreground="#D8CCBA" FontSize="12"
                                            TextTrimming="CharacterEllipsis" MaxWidth="310" />
                             </StackPanel>
                             <Button Classes="plain" Click="RareMap_Click" IsVisible="{Binding HasLiveBosses}"
                                     ToolTip.Tip="Open the rare map">
+                                <!-- Green with every world boss up, yellow with some, red with none -->
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Ellipse Width="7" Height="7" Fill="#E5604D" VerticalAlignment="Center" />
+                                    <Ellipse Width="7" Height="7" Fill="{Binding LiveBossesBrush}" VerticalAlignment="Center" />
                                     <TextBlock Text="{Binding LiveBossesText}" Foreground="#D8CCBA" FontSize="12" FontWeight="Normal" />
                                 </StackPanel>
                             </Button>
@@ -288,7 +333,8 @@
                                 </ItemsControl>
                             </ScrollViewer>
                             <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10">
-                                <Button Classes="link" Content="ALL PATCH NOTES" Click="WhatsNew_Click" Padding="0" FontSize="11" />
+                                <Button Classes="link" Content="ALL PATCH NOTES" Click="WhatsNew_Click" Padding="0" FontSize="11"
+                                        IsEnabled="{Binding CanNavigate}" />
                                 <TextBlock Text="{Binding WhatsNewMoreText}" Foreground="#8C8273" FontSize="11" VerticalAlignment="Center" />
                             </StackPanel>
                         </Grid>
@@ -296,8 +342,16 @@
                 </Grid>
             </Grid>
 
-            <!-- Status card, settings, enter realm -->
-            <Grid Grid.Row="2" Margin="32,0,32,10" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="14">
+            <views:ShopPage IsVisible="{Binding IsShopPage}" Margin="24,8,24,0" />
+            <views:ArmoryPage IsVisible="{Binding IsArmoryPage}" Margin="24,8,24,0" />
+            <views:CalendarPage IsVisible="{Binding IsCalendarPage}" Margin="24,8,24,0" />
+            <views:PatchNotesPage IsVisible="{Binding IsPatchNotesPage}" Margin="24,8,24,0" />
+            <views:AddonsPage IsVisible="{Binding IsAddonsPage}" Margin="24,8,24,0" />
+            <views:SettingsPage IsVisible="{Binding IsSettingsPage}" Margin="24,8,24,0" />
+            </Panel>
+
+            <!-- Status card and enter realm, on every page -->
+            <Grid Grid.Row="2" Margin="32,10,32,10" ColumnDefinitions="*,Auto" ColumnSpacing="14">
                 <StackPanel VerticalAlignment="Bottom" Spacing="8">
                     <!-- Launcher update -->
                     <views:DragonFrame IsVisible="{Binding IsUpdateAvailable}" Ground="Marble" Padding="14,8">
@@ -370,15 +424,7 @@
                     </views:DragonFrame>
                 </StackPanel>
 
-                <Button Grid.Column="1" Classes="inset" Width="72" Height="96" VerticalAlignment="Bottom"
-                        Click="Settings_Click" ToolTip.Tip="Settings: client, addons, sharing, account"
-                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
-                    <!-- Drawn rather than the ⚙ character, which each OS draws from a different font. -->
-                    <Path Width="30" Height="30" Stretch="Uniform" Fill="#E8B64C"
-                          Data="F0 M 19.84,9.60 L 22.37,10.36 L 22.37,13.64 L 19.84,14.40 L 19.24,15.85 L 20.49,18.17 L 18.17,20.49 L 15.85,19.24 L 14.40,19.84 L 13.64,22.37 L 10.36,22.37 L 9.60,19.84 L 8.15,19.24 L 5.83,20.49 L 3.51,18.17 L 4.76,15.85 L 4.16,14.40 L 1.63,13.64 L 1.63,10.36 L 4.16,9.60 L 4.76,8.15 L 3.51,5.83 L 5.83,3.51 L 8.15,4.76 L 9.60,4.16 L 10.36,1.63 L 13.64,1.63 L 14.40,4.16 L 15.85,4.76 L 18.17,3.51 L 20.49,5.83 L 19.24,8.15 Z M 15.40,12 A 3.4,3.4 0 1 0 8.60,12 A 3.4,3.4 0 1 0 15.40,12 Z" />
-                </Button>
-
-                <Button Grid.Column="2" Classes="gold" Width="300" Height="96" VerticalAlignment="Bottom"
+                <Button Grid.Column="1" Classes="gold" Width="300" Height="96" VerticalAlignment="Bottom"
                         IsEnabled="{Binding CanEnterRealm}" Click="EnterRealm_Click"
                         HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
                     <Button.Effect>

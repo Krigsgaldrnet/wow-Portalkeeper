@@ -41,22 +41,27 @@ public partial class MainWindow : Window
 
     private void Close_Click(object? sender, RoutedEventArgs e) => Close();
 
+    // The top bar's links: the button's Tag names the page.
+    private async void Nav_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm && sender is Button { Tag: string name } && System.Enum.TryParse<LauncherPage>(name, out var page))
+            await vm.GoToAsync(page);
+    }
+
+    private async void Settings_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm) await vm.GoToAsync(LauncherPage.Settings);
+    }
+
     private void Website_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is MainViewModel vm)
             OpenUrl(string.IsNullOrWhiteSpace(vm.RealmWebsite) ? vm.AccountSignupUrl : vm.RealmWebsite);
     }
 
-    private void PatchNotes_Click(object? sender, RoutedEventArgs e)
+    private async void WhatsNew_Click(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is MainViewModel vm)
-            OpenUrl(vm.PatchNotesUrl);
-    }
-
-    private void WhatsNew_Click(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is MainViewModel vm)
-            OpenUrl(vm.WhatsNewUrl);
+        if (DataContext is MainViewModel vm) await vm.GoToAsync(LauncherPage.PatchNotes);
     }
 
     private void RareMap_Click(object? sender, RoutedEventArgs e)
@@ -120,23 +125,6 @@ public partial class MainWindow : Window
 
         viewModel.SetClientDirectory(folder.Path.LocalPath);
     }
-    
-    private async void ManageAddons_Click(
-    object? sender,
-    RoutedEventArgs e)
-	{
-	    if (DataContext is not MainViewModel viewModel)
-	        return;
-	
-	    var window =
-	        new ManageAddonsWindow
-	        {
-	            DataContext = viewModel
-	        };
-	
-	    await window.ShowDialog(this);
-	}
-    
 
     private async void RealmCheckAgain_Click(
         object? sender,
@@ -172,106 +160,6 @@ public partial class MainWindow : Window
             Show();
             Activate();
         }
-    }
-
-    private async void Armory_Click(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainViewModel viewModel)
-            return;
-
-        var result = await viewModel.LoadArmoryAsync();
-        if (result.Feed is null)
-        {
-            var error = new Window
-            {
-                Title = "Realm Armory", Width = 520, Height = 180,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Content = new TextBlock { Text = result.Status, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Margin = new Avalonia.Thickness(24) }
-            };
-            await error.ShowDialog(this);
-            return;
-        }
-
-        var window = new ArmoryWindow
-        {
-            DataContext = new ArmoryViewModel(result.Feed, viewModel.ArmoryUrl, result.Status, viewModel.ArmoryService, viewModel.ClientPath, showTransmog: viewModel.ShowTransmogrifiedAppearances)
-        };
-        var realmUrl = viewModel.ArmoryUrl;
-        System.ComponentModel.PropertyChangedEventHandler preferenceChanged = (_, args) =>
-        {
-            if (args.PropertyName == nameof(MainViewModel.ShowTransmogrifiedAppearances) && viewModel.ArmoryUrl == realmUrl)
-                ((ArmoryViewModel)window.DataContext!).SetTransmogPreference(viewModel.ShowTransmogrifiedAppearances);
-        };
-        viewModel.PropertyChanged += preferenceChanged;
-        try { await window.ShowDialog(this); }
-        finally { viewModel.PropertyChanged -= preferenceChanged; }
-    }
-
-    private async void Shop_Click(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainViewModel viewModel || viewModel.CreateShop() is not { } shop)
-            return;
-
-        var window = new ShopWindow { DataContext = shop };
-        shop.LoginExpired += message =>
-        {
-            window.Close();
-            _ = viewModel.ShopLoginExpiredAsync(message);
-        };
-        try { await window.ShowDialog(this); }
-        finally { viewModel.ShopClosed(shop); }
-    }
-
-    private async void News_Click(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainViewModel viewModel)
-            return;
-
-        var result = await viewModel.LoadNewsAsync();
-        if (result.Feed is null)
-        {
-            var error = new Window
-            {
-                Title = "Realm News",
-                Width = 520,
-                Height = 180,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Content = new TextBlock
-                {
-                    Text = result.Status,
-                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                    Margin = new Avalonia.Thickness(24)
-                }
-            };
-            await error.ShowDialog(this);
-            return;
-        }
-
-        var window = new NewsWindow
-        {
-            DataContext = new NewsViewModel(result.Feed, result.Status)
-        };
-        await window.ShowDialog(this);
-    }
-
-    private async void Calendar_Click(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainViewModel viewModel)
-            return;
-
-        var result = await viewModel.LoadCalendarAsync();
-        if (result.Feed is null)
-        {
-            var error = new Window { Title = "Realm Calendar", Width = 520, Height = 180, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = new TextBlock { Text = result.Status, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Margin = new Avalonia.Thickness(24) } };
-            await error.ShowDialog(this);
-            return;
-        }
-
-        var window = new CalendarWindow
-        {
-            DataContext = new CalendarViewModel(result.Feed, result.Status)
-        };
-        await window.ShowDialog(this);
     }
 
     private async void LogIn_Click(object? sender, RoutedEventArgs e)
@@ -351,24 +239,9 @@ public partial class MainWindow : Window
         if (DataContext is MainViewModel vm && !vm.TryApplySelfUpdate(manual: true))
             vm.ShowUpdateWaitMessage();
     }
+
     private void ViewRelease_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is MainViewModel vm) vm.ViewRelease();
-    }
-    private async void Settings_Click(
-        object? sender,
-        RoutedEventArgs e)
-    {
-        if (DataContext is not MainViewModel viewModel)
-            return;
-
-        _ = viewModel.LoadArmoryAsync();
-        viewModel.RefreshRealmChoices();
-        var window = new SettingsWindow
-        {
-            DataContext = viewModel
-        };
-
-        await window.ShowDialog(this);
     }
 }

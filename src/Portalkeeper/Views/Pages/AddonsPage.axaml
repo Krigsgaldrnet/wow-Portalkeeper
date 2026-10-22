@@ -1,0 +1,125 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Portalkeeper.ViewModels"
+             xmlns:views="using:Portalkeeper.Views"
+             xmlns:models="using:Portalkeeper.Models"
+             x:Class="Portalkeeper.Views.AddonsPage"
+             x:DataType="vm:MainViewModel">
+
+    <!-- Evermore fork: the ADDONS page: the optional addons the player can choose. Once installed they
+         update by themselves like the realm's required addons, until uninstalled. -->
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <views:PageBanner Grid.Row="0" Title="ADDONS" Subtitle="Extra addons you can choose for this realm">
+            <StackPanel Orientation="Horizontal" Spacing="9">
+                <Button Content="+ ADD ADDON" Click="AddAddon_Click" Padding="14,8" />
+                <Button Content="UPDATE INSTALLED" Click="UpdateAll_Click" Padding="14,8" />
+                <Button Content="CHECK AGAIN" Click="Refresh_Click" Padding="14,8" />
+            </StackPanel>
+        </views:PageBanner>
+
+        <!-- Summary strip -->
+        <views:DragonFrame Grid.Row="1"
+                Margin="18,12,18,6"
+                Ground="Marble"
+                Padding="14,10">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                <Border Width="34" Height="34"
+                        CornerRadius="17"
+                        Background="#172330"
+                        BorderBrush="#806124"
+                        BorderThickness="1">
+                    <TextBlock Text="A"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Foreground="#F6D477"
+                               FontWeight="Bold" />
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Text="{Binding OptionalAddonStatus}"
+                               Foreground="#D8CCBA"
+                               FontSize="13"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="Once installed, an addon updates by itself like the realm's required addons, until you uninstall it."
+                               Foreground="#756B5C"
+                               FontSize="11"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Grid>
+        </views:DragonFrame>
+
+        <!-- Addon cards -->
+        <ScrollViewer Grid.Row="2" Margin="18,6,18,0">
+            <ItemsControl ItemsSource="{Binding OptionalAddons}" Margin="0,0,10,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:AddonInfo">
+                        <views:DragonFrame Margin="0,0,0,9"
+                                Ground="Marble"
+                                Padding="14,12">
+                            <Grid ColumnDefinitions="*,150,165,Auto"
+                                  RowDefinitions="Auto,Auto"
+                                  ColumnSpacing="12">
+                                <StackPanel Grid.Row="0" Grid.Column="0" Spacing="3">
+                                    <TextBlock Text="{Binding Definition.Name}"
+                                               Foreground="#F8F0DF"
+                                               FontWeight="SemiBold"
+                                               FontSize="15"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding VersionText}"
+                                               Foreground="#786F62"
+                                               FontSize="11"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <Border Grid.Row="0"
+                                        Grid.Column="1"
+                                        Background="#1A140E"
+                                        BorderBrush="#6E5426"
+                                        BorderThickness="1"
+                                        CornerRadius="3"
+                                        Padding="9,5"
+                                        VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding RequirementText}"
+                                               Foreground="#BFAE91"
+                                               FontSize="11"
+                                               HorizontalAlignment="Center" />
+                                </Border>
+
+                                <StackPanel Grid.Row="0"
+                                            Grid.Column="2"
+                                            Orientation="Horizontal"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            Spacing="6">
+                                    <TextBlock Text="{Binding StatusSymbol}"
+                                               Foreground="#D8C5EA"
+                                               FontSize="14" />
+                                    <TextBlock Text="{Binding StatusText}"
+                                               Foreground="#E8DDC8"
+                                               FontSize="12" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="0"
+                                            Grid.RowSpan="2"
+                                            Grid.Column="3"
+                                            Margin="8,0,0,0"
+                                            Spacing="6"
+                                            VerticalAlignment="Center">
+                                    <Button Content="{Binding ActionText}"
+                                            IsVisible="{Binding CanInstallOrUpdate}"
+                                            Click="AddonAction_Click"
+                                            MinWidth="104" />
+                                    <Button Content="REINSTALL / UPDATE" IsVisible="{Binding CanReinstall}" Click="AddonAction_Click" MinWidth="104" />
+                                    <Button Content="UNINSTALL" IsVisible="{Binding IsInstalled}" Click="Uninstall_Click" MinWidth="104" />
+                                    <Button Content="REMOVE"
+                                            IsVisible="{Binding CanRemoveFromManagement}"
+                                            Click="RemovePersonalAddon_Click"
+                                            MinWidth="104" />
+                                </StackPanel>
+                            </Grid>
+                        </views:DragonFrame>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

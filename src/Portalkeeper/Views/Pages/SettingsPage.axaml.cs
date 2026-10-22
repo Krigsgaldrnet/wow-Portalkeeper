@@ -1,35 +1,38 @@
 using System.Linq;
-using Portalkeeper.ViewModels;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Portalkeeper.ViewModels;
 
 namespace Portalkeeper.Views;
 
-public partial class SettingsWindow : Window
+/// <summary>The SETTINGS page of the main window (the gear in the top bar).</summary>
+public partial class SettingsPage : UserControl
 {
-    public SettingsWindow()
-    {
-        InitializeComponent();
-    }
+    public SettingsPage() => InitializeComponent();
+
+    private Window? Owner => TopLevel.GetTopLevel(this) as Window;
 
     private async void ChangeRealm_Click(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is MainViewModel vm && vm.CanSwitchRealm)
-            await new RealmSelectionWindow(vm).ShowDialog(this);
+        if (DataContext is MainViewModel vm && vm.CanSwitchRealm && Owner is { } owner)
+            await new RealmSelectionWindow(vm).ShowDialog(owner);
     }
+
     private async void CheckForUpdates_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is MainViewModel vm) await vm.CheckForUpdatesAsync();
     }
+
     private void ViewRelease_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is MainViewModel vm) vm.ViewRelease();
     }
+
     private async void LocateClient_Click(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainViewModel vm) return;
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        if (DataContext is not MainViewModel vm || Owner is not { } owner) return;
+        var folders = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
             Title = "Locate World of Warcraft 3.3.5a",
             AllowMultiple = false
@@ -40,15 +43,14 @@ public partial class SettingsWindow : Window
 
     private async void ManageAddons_Click(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is MainViewModel vm)
-            await new ManageAddonsWindow { DataContext = vm }.ShowDialog(this);
+        if (DataContext is MainViewModel vm) await vm.GoToAsync(LauncherPage.Addons);
     }
 
     private async void RepairGame_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainViewModel vm) return;
-        // The repair shows on the home card; Settings would only hide it.
-        Close();
+        // The repair shows on the home screen's status card.
+        vm.GoHome();
         vm.DismissCrash();
         await vm.RepairGameAsync();
     }
@@ -57,15 +59,9 @@ public partial class SettingsWindow : Window
     {
         if (DataContext is MainViewModel vm)
         {
-            Close();
+            vm.GoHome();
             await vm.LogOutAsync();
         }
-    }
-    private void Close_Click(
-        object? sender,
-        RoutedEventArgs e)
-    {
-        Close();
     }
 
     private async void ConstructRuntime_Click(object? sender, RoutedEventArgs e)
