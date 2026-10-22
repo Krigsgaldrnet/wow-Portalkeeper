@@ -565,9 +565,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             ? "LAUNCHING..."
             : IsGameRunning
                 ? "WORLD OF WARCRAFT RUNNING"
+            : RealmBooting && GameReadyToEnter
+                ? "STARTING UP"
                 : "ENTER REALM";
 
-    public bool CanEnterRealm =>
+    // Evermore fork: the game is ready but login isn't open yet, so there's nothing to enter.
+    public bool CanEnterRealm => GameReadyToEnter && !RealmBooting;
+
+    /// <summary>Everything on this PC is ready to launch, whatever the realm is doing.</summary>
+    private bool GameReadyToEnter =>
         !_isRefreshingConfiguration &&
         !_isManagingComponents &&
         ClientValid &&
@@ -592,6 +598,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
         try
         {
+            // The 45-second status check may not have seen a restart yet: ask now.
+            if (RealmBranding.IsBuiltIn(_realmInfo))
+            {
+                LaunchStatus = "Checking the realm...";
+                await RefreshRealmHealthAsync();
+                if (RealmBooting)
+                    throw new InvalidOperationException("The realm is still starting up (" + BootProgressText + "). ENTER REALM opens once login does.");
+                LaunchStatus = "Preparing client...";
+            }
             await StopOptionalAddonUpdatesAsync();
             ApplyClientInfo(_clientService.ValidateClient(ClientPath, _realmInfo.Client));
             if (!await EnforceRealmClientAsync())
