@@ -22,6 +22,7 @@
         <StreamGeometry x:Key="PawIcon">M 12,12.5 C 8,12.5 5.5,16.5 6.5,19 C 7.5,21.5 10,20.5 12,20.5 C 14,20.5 16.5,21.5 17.5,19 C 18.5,16.5 16,12.5 12,12.5 Z M 5,8.5 A 2,2.5 0 1 0 5,13.5 A 2,2.5 0 1 0 5,8.5 Z M 19,8.5 A 2,2.5 0 1 0 19,13.5 A 2,2.5 0 1 0 19,8.5 Z M 9,3.5 A 2,2.5 0 1 0 9,8.5 A 2,2.5 0 1 0 9,3.5 Z M 15,3.5 A 2,2.5 0 1 0 15,8.5 A 2,2.5 0 1 0 15,3.5 Z</StreamGeometry>
         <StreamGeometry x:Key="SparkleIcon">M 12,2 L 14.2,9.8 L 22,12 L 14.2,14.2 L 12,22 L 9.8,14.2 L 2,12 L 9.8,9.8 Z</StreamGeometry>
         <StreamGeometry x:Key="GemIcon">M 12,3 L 20,10 L 12,21 L 4,10 Z</StreamGeometry>
+        <StreamGeometry x:Key="LockIcon">M 6.5,10 L 6.5,7.5 A 5.5,5.5 0 0 1 17.5,7.5 L 17.5,10 L 15,10 L 15,7.5 A 3,3 0 0 0 9,7.5 L 9,10 Z M 4.5,10.5 L 19.5,10.5 L 19.5,21.5 L 4.5,21.5 Z</StreamGeometry>
 
         <!-- The coin (INV_Misc_Coin_19 in game), drawn: copper with a raised rim. -->
         <DrawingImage x:Key="CoinImage">
@@ -308,6 +309,8 @@
                                                             <Path IsVisible="{Binding IsOther}" Fill="{Binding AccentBrush}" Stretch="Uniform" Data="{StaticResource GemIcon}" />
                                                         </Panel>
                                                     </Border>
+                                                    <!-- Locked: the model behind a veil -->
+                                                    <Border IsVisible="{Binding IsLocked}" Background="#99140F0A" CornerRadius="4" IsHitTestVisible="False" />
                                                 </Panel>
                                                 <TextBlock Grid.Row="1" Text="{Binding Name}" FontSize="12.5" FontWeight="SemiBold" Foreground="#F3D58C"
                                                            TextAlignment="Center" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
@@ -321,6 +324,12 @@
                                                         ToolTip.Tip="{Binding StateText}">
                                                     <TextBlock Text="✓" FontSize="11" FontWeight="Bold" Foreground="#8EE68E"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                                <Border Grid.RowSpan="3" IsVisible="{Binding IsLocked}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,6,6,0"
+                                                        Background="#33C9A27A" BorderBrush="#C9A27A" BorderThickness="1" CornerRadius="9" Width="18" Height="18"
+                                                        ToolTip.Tip="{Binding UnlockText}">
+                                                    <Path Data="{StaticResource LockIcon}" Fill="#E8CFA6" Stretch="Uniform" Width="9" Height="10"
+                                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                 </Border>
                                             </Grid>
                                         </Button>
@@ -392,6 +401,12 @@
                                     </Grid>
                                     <TextBlock Text="{Binding SelectedOffer.Description}" FontSize="12.5" Foreground="#C9BCA6"
                                                TextWrapping="Wrap" MaxLines="3" TextTrimming="WordEllipsis" ToolTip.Tip="{Binding SelectedOffer.Description}" />
+                                    <!-- Locked: what opens it -->
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="7" IsVisible="{Binding SelectedOffer.IsLocked}">
+                                        <Path Data="{StaticResource LockIcon}" Fill="#E8CFA6" Stretch="Uniform" Width="11" Height="12" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding SelectedOffer.UnlockText}" FontSize="12.5" Foreground="#E8CFA6"
+                                                   TextWrapping="Wrap" VerticalAlignment="Center" />
+                                    </Grid>
                                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,4,0,0">
                                         <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
                                             <Image Source="{StaticResource CoinImage}" Width="22" Height="22" IsVisible="{Binding SelectedOffer.ShowCoin}" />

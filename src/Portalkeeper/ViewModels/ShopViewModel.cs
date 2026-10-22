@@ -525,6 +525,7 @@ public sealed class ShopOfferView : ViewModelBase
     private string _stateText = "";
     private bool _canBuy;
     private bool _isOwned;
+    private bool _isLocked;
     private bool _isSelected;
     private Bitmap? _picture;
 
@@ -564,13 +565,21 @@ public sealed class ShopOfferView : ViewModelBase
     public bool HasState => _stateText.Length > 0;
     public bool CanBuy { get => _canBuy; private set => SetProperty(ref _canBuy, value); }
     public bool IsOwned { get => _isOwned; private set => SetProperty(ref _isOwned, value); }
+    /// <summary>Not for sale to the account yet (an owned one shows as owned): none of its characters has come far enough.</summary>
+    public bool IsLocked { get => _isLocked; private set => SetProperty(ref _isLocked, value); }
+    /// <summary>What opens a locked offer, for the stage.</summary>
+    public string UnlockText => Offer.Unlock.Length > 0
+        ? Offer.Unlock.TrimEnd('.') + " with any character to unlock it."
+        : "None of your characters has come far enough to buy this yet.";
 
     public void Update(ShopCharacterView? character, int balance)
     {
         IsOwned = character is not null && Offer.Owned.Contains(character.Guid);
+        IsLocked = Offer.Locked && !IsOwned;
         var cannot = character is not null && Offer.Cannot.Contains(character.Guid);
         StateText = character is null ? "No character"
             : IsOwned ? (Offer.Category == "service" ? "Already waiting" : "Owned")
+            : IsLocked ? "Locked"
             : cannot ? "Can't use"
             : balance < Offer.Price ? $"Need {(Offer.Price - Math.Max(0, balance)).ToString("N0", CultureInfo.CurrentCulture)} more"
             : "";
