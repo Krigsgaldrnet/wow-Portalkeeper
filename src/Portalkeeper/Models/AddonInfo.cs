@@ -124,10 +124,18 @@ public sealed class AddonInfo
                     ? $"Installed: unknown   Available: {Definition.Version}"
                     : "Installed version: unknown";
 
+            // A GitHub addon can change without a version bump: name the commits, or the row reads
+            // "Installed: 1.0   Available: 1.0" next to Update Available.
+            if (SourceUpdateAvailable && !VersionUpdateAvailable && !IsNewerThanManifest)
+                return $"Installed: {InstalledVersion} ({ShortCommit(InstalledSourceCommit)})   Available: {Definition.Version} ({ShortCommit(Definition.SourceCommit)})";
+
             if (IsUpdateAvailable || IsNewerThanManifest)
                 return $"Installed: {InstalledVersion}   Available: {Definition.Version}";
 
             return $"Installed: {InstalledVersion}";
         }
     }
+
+    private static string ShortCommit(string commit) =>
+        commit.Length > 7 ? commit[..7] : commit;
 }

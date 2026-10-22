@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:Portalkeeper.ViewModels"
+        xmlns:views="using:Portalkeeper.Views"
         mc:Ignorable="d"
         x:Class="Portalkeeper.Views.CalendarWindow"
         x:DataType="vm:CalendarViewModel"
@@ -15,6 +16,7 @@
         Background="#0B1017">
 
   <Window.Styles>
+    <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml"/>
     <Style Selector="Button.nav">
       <Setter Property="Background" Value="#101925"/>
       <Setter Property="Foreground" Value="#F3CF78"/>
@@ -53,7 +55,10 @@
     </Style>
   </Window.Styles>
 
-  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Background="#0B1017">
+  <Panel>
+  <!-- DragonUI: a rock ground in a bronze frame, sections as insets -->
+  <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False"/>
+  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="6,0,6,6">
 
     <!-- Scenic Portalkeeper header -->
     <Border Grid.Row="0"
@@ -62,7 +67,7 @@
             BorderThickness="0,0,0,2"
             ClipToBounds="True">
       <Grid>
-        <Image Source="/Assets/Calendar/calendar-banner.png"
+        <Image Source="/Assets/Calendar/header-banner.png"
                Stretch="UniformToFill"
                HorizontalAlignment="Stretch"
                VerticalAlignment="Stretch"/>
@@ -70,21 +75,8 @@
         <Border Background="#26000000"/>
         <Border BorderBrush="#5FD7AC50" BorderThickness="0,1,0,0"/>
 
-        <Grid ColumnDefinitions="Auto,*,Auto" Margin="24,12,26,12">
-          <Border Width="82"
-                  Height="82"
-                  CornerRadius="41"
-                  Background="#0B121D"
-                  BorderBrush="#C0903C"
-                  BorderThickness="2"
-                  Padding="4"
-                  VerticalAlignment="Center">
-            <Image Source="/Assets/portalkeeper-icon.png"
-                   Stretch="UniformToFill"/>
-          </Border>
-
-          <StackPanel Grid.Column="1"
-                      Margin="17,0,0,0"
+        <Grid ColumnDefinitions="*,Auto" Margin="24,12,26,12">
+          <StackPanel Grid.Column="0"
                       VerticalAlignment="Center">
             <TextBlock Text="REALM CALENDAR"
                        FontSize="31"
@@ -97,7 +89,7 @@
                        Margin="1,2,0,0"/>
           </StackPanel>
 
-          <StackPanel Grid.Column="2"
+          <StackPanel Grid.Column="1"
                       VerticalAlignment="Center"
                       HorizontalAlignment="Right">
             <TextBlock Text="PORTALKEEPER"
@@ -118,7 +110,7 @@
 
     <!-- Month navigation -->
     <Border Grid.Row="1"
-            Background="#0D141D"
+            Background="Transparent"
             BorderBrush="#46361E"
             BorderThickness="0,0,0,1"
             Padding="22,13,22,12">
@@ -131,19 +123,12 @@
                 HorizontalAlignment="Left"
                 MinWidth="145"/>
 
-        <Border Grid.Column="1"
+        <views:DragonFrame Grid.Column="1"
                 HorizontalAlignment="Center"
                 MinWidth="340"
-                Background="#080D13"
-                BorderBrush="#5B4322"
-                BorderThickness="2"
-                CornerRadius="5"
-                Padding="3">
-          <Border Background="#111B27"
-                  BorderBrush="#B88839"
-                  BorderThickness="1"
-                  CornerRadius="3"
-                  Padding="30,7">
+                Kind="SmallInset"
+                Ground="Marble"
+                Padding="30,7">
           <StackPanel>
             <TextBlock Text="{Binding MonthTitle}"
                        HorizontalAlignment="Center"
@@ -157,8 +142,7 @@
                        Foreground="#887E8F"
                        Margin="0,1,0,0"/>
           </StackPanel>
-          </Border>
-        </Border>
+        </views:DragonFrame>
 
         <Button Grid.Column="2"
                 Classes="nav"
@@ -172,18 +156,10 @@
     </Border>
 
     <!-- Framed parchment calendar -->
-    <Border Grid.Row="2"
+    <views:DragonFrame Grid.Row="2"
             Margin="18,10,18,0"
-            Background="#080B0E"
-            BorderBrush="#5B3F18"
-            BorderThickness="3"
-            CornerRadius="5"
-            Padding="3">
-      <Border Background="#221A11"
-              BorderBrush="#C09549"
-              BorderThickness="1"
-              CornerRadius="3"
-              Padding="3">
+            Ground="None"
+            Padding="5">
         <Border Background="#C8B991"
                 BorderBrush="#6B512C"
                 BorderThickness="1"
@@ -215,7 +191,7 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:CalendarDayCell">
-                <Button Classes="day"
+                <Button Classes="day plain"
                         Click="Day_Click"
                         Background="{Binding Background}"
                         BorderBrush="{Binding BorderBrush}"
@@ -293,22 +269,13 @@
           </Grid>
         </Grid>
         </Border>
-      </Border>
-    </Border>
+    </views:DragonFrame>
 
     <!-- Selected day detail panel -->
-    <Border Grid.Row="3"
+    <views:DragonFrame Grid.Row="3"
             Margin="18,10,18,0"
-            Background="#080D13"
-            BorderBrush="#5B401D"
-            BorderThickness="2"
-            CornerRadius="4"
-            Padding="3">
-      <Border Background="#0E1722"
-              BorderBrush="#A07835"
-              BorderThickness="1"
-              CornerRadius="3"
-              Padding="13,11">
+            Ground="Marble"
+            Padding="16,14">
       <Grid ColumnDefinitions="220,*">
         <StackPanel Margin="3,0,18,0">
           <TextBlock Text="SELECTED DAY"
@@ -400,12 +367,11 @@
           </ItemsControl>
         </Grid>
       </Grid>
-      </Border>
-    </Border>
+    </views:DragonFrame>
 
     <!-- Feed status -->
     <Border Grid.Row="4"
-            Background="#0A1017"
+            Background="Transparent"
             BorderBrush="#3C301D"
             BorderThickness="0,1,0,0"
             Margin="0,10,0,0"
@@ -424,4 +390,5 @@
       </Grid>
     </Border>
   </Grid>
+  </Panel>
 </Window>

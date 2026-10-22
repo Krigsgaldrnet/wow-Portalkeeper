@@ -52,6 +52,7 @@
     </Window.Resources>
 
     <Window.Styles>
+        <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml" />
         <Style Selector="Button">
             <Setter Property="Background" Value="#CC0B141E" />
             <Setter Property="Foreground" Value="#F6D477" />
@@ -133,7 +134,7 @@
         </Style>
 
         <Style Selector="ComboBox">
-            <Setter Property="Background" Value="#0A141D" />
+            <Setter Property="Background" Value="#1A140E" />
             <Setter Property="Foreground" Value="#E9DFC9" />
             <Setter Property="BorderBrush" Value="#765522" />
             <Setter Property="BorderThickness" Value="1" />
@@ -141,7 +142,7 @@
         </Style>
 
         <Style Selector="Border.card">
-            <Setter Property="Background" Value="#0D1822" />
+            <Setter Property="Background" Value="#E61A140E" />
             <Setter Property="BorderBrush" Value="#4D3B20" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
@@ -153,7 +154,7 @@
         <!-- Offer tiles: the whole tile picks the offer for the stage -->
         <Style Selector="Button.tile">
             <Setter Property="Padding" Value="0" />
-            <Setter Property="Background" Value="#0D1822" />
+            <Setter Property="Background" Value="#E61A140E" />
             <Setter Property="BorderBrush" Value="#4D3B20" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
@@ -161,19 +162,19 @@
             <Setter Property="VerticalContentAlignment" Value="Stretch" />
         </Style>
         <Style Selector="Button.tile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#132231" />
+            <Setter Property="Background" Value="#2A1F14" />
             <Setter Property="BorderBrush" Value="#9A6B1E" />
         </Style>
         <Style Selector="Button.tile:pressed /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#17293A" />
+            <Setter Property="Background" Value="#33261A" />
         </Style>
         <Style Selector="Button.tile.selected /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#1A2A36" />
+            <Setter Property="Background" Value="#2E2216" />
             <Setter Property="BorderBrush" Value="#E8B64C" />
             <Setter Property="BorderThickness" Value="2" />
         </Style>
         <Style Selector="Button.tile:disabled /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#0D1822" />
+            <Setter Property="Background" Value="#E61A140E" />
         </Style>
 
         <Style Selector="TextBlock.serif">
@@ -182,16 +183,14 @@
     </Window.Styles>
 
     <Grid>
-        <Grid RowDefinitions="Auto,Auto,*,Auto" IsEnabled="{Binding !IsConfirming}">
+        <!-- DragonUI: a rock ground in a bronze frame -->
+        <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
+        <Grid RowDefinitions="Auto,Auto,*,Auto" IsEnabled="{Binding !IsConfirming}" Margin="6,0,6,6">
 
             <!-- Header: title and wallet -->
             <Border Grid.Row="0" BorderBrush="#9A6D25" BorderThickness="0,0,0,2" Padding="30,18">
                 <Border.Background>
-                    <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
-                        <GradientStop Offset="0" Color="#13283A" />
-                        <GradientStop Offset="0.6" Color="#0A141D" />
-                        <GradientStop Offset="1" Color="#1E1408" />
-                    </LinearGradientBrush>
+                    <ImageBrush Source="/Assets/Calendar/header-banner.png" Stretch="UniformToFill" Opacity="0.55" />
                 </Border.Background>
                 <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="18">
                     <StackPanel VerticalAlignment="Center" Spacing="2">
@@ -209,7 +208,7 @@
                     </StackPanel>
 
                     <Border Grid.Column="1" IsVisible="{Binding HasBalance}"
-                            Background="#B30A121B" BorderBrush="#66E8B64C" BorderThickness="1" CornerRadius="8" Padding="14,8"
+                            Background="#B31A140E" BorderBrush="#66E8B64C" BorderThickness="1" CornerRadius="8" Padding="14,8"
                             VerticalAlignment="Center"
                             ToolTip.Tip="Your account's wallet. Every character on the account spends from it.">
                         <StackPanel Orientation="Horizontal" Spacing="10">
@@ -237,7 +236,7 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:ShopCategoryView">
-                            <Button Classes="tab" Classes.selected="{Binding IsSelected}" Click="Category_Click">
+                            <Button Classes="tab plain" Classes.selected="{Binding IsSelected}" Click="Category_Click">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <TextBlock Text="{Binding Title}" />
                                     <TextBlock Text="{Binding Count}" Foreground="#75694E" FontSize="11" VerticalAlignment="Center" />
@@ -288,7 +287,7 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:ShopOfferView">
-                                        <Button Classes="tile" Classes.selected="{Binding IsSelected}" Click="Tile_Click"
+                                        <Button Classes="tile plain" Classes.selected="{Binding IsSelected}" Click="Tile_Click"
                                                 Width="148" Height="184" ToolTip.Tip="{Binding Name}">
                                             <Grid RowDefinitions="*,Auto,Auto" RowSpacing="2">
                                                 <Panel Margin="2,4,2,0">
@@ -297,7 +296,7 @@
                                                                          IsVisible="{Binding !ShowIcon}" />
                                                     <!-- Or a drawn icon -->
                                                     <Border IsVisible="{Binding ShowIcon}" Width="64" Height="64" CornerRadius="32"
-                                                            BorderThickness="1.5" BorderBrush="{Binding AccentBrush}" Background="#14202B">
+                                                            BorderThickness="1.5" BorderBrush="{Binding AccentBrush}" Background="#1F170F">
                                                         <Panel Width="34" Height="34" Opacity="0.9">
                                                             <Path IsVisible="{Binding IsMount}" Fill="{Binding AccentBrush}" Stretch="Uniform" Data="{StaticResource HorseshoeIcon}" />
                                                             <Path IsVisible="{Binding IsPet}" Fill="{Binding AccentBrush}" Stretch="Uniform" Data="{StaticResource PawIcon}" />
@@ -328,13 +327,13 @@
                     </ScrollViewer>
 
                     <!-- The stage -->
-                    <Border Grid.Column="1" CornerRadius="10" BorderBrush="#4D3B20" BorderThickness="1" ClipToBounds="True"
-                            IsVisible="{Binding HasSelectedOffer}">
+                    <views:DragonFrame Grid.Column="1" Ground="None" Padding="3" IsVisible="{Binding HasSelectedOffer}">
+                    <Border CornerRadius="4" ClipToBounds="True">
                         <Border.Background>
                             <RadialGradientBrush Center="50%,40%" GradientOrigin="50%,40%" RadiusX="72%" RadiusY="72%">
-                                <GradientStop Offset="0" Color="#2C3E50" />
-                                <GradientStop Offset="0.45" Color="#14212D" />
-                                <GradientStop Offset="1" Color="#060B10" />
+                                <GradientStop Offset="0" Color="#4A3824" />
+                                <GradientStop Offset="0.45" Color="#21180F" />
+                                <GradientStop Offset="1" Color="#0A0705" />
                             </RadialGradientBrush>
                         </Border.Background>
                         <Grid RowDefinitions="*,Auto">
@@ -367,7 +366,7 @@
                                     </Ellipse.Fill>
                                 </Ellipse>
                                 <Border Width="120" Height="120" CornerRadius="60" BorderThickness="3"
-                                        BorderBrush="{Binding SelectedOffer.AccentBrush}" Background="#14202B">
+                                        BorderBrush="{Binding SelectedOffer.AccentBrush}" Background="#1F170F">
                                     <Panel Width="62" Height="62">
                                         <Path IsVisible="{Binding SelectedOffer.IsMount}" Fill="{Binding SelectedOffer.AccentBrush}" Stretch="Uniform" Data="{StaticResource HorseshoeIcon}" />
                                         <Path IsVisible="{Binding SelectedOffer.IsPet}" Fill="{Binding SelectedOffer.AccentBrush}" Stretch="Uniform" Data="{StaticResource PawIcon}" />
@@ -379,7 +378,7 @@
 
                             <!-- What it is and BUY -->
                             <Border Grid.Row="1" Margin="14,4,14,14" Padding="18,14" CornerRadius="8"
-                                    Background="#E60A121B" BorderBrush="#9A6B1E" BorderThickness="1">
+                                    Background="#E61A140E" BorderBrush="#9A6B1E" BorderThickness="1">
                                 <StackPanel Spacing="6">
                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                                         <TextBlock Classes="serif" Text="{Binding SelectedOffer.Name}" FontSize="20" FontWeight="Bold" Foreground="#F3D58C"
@@ -404,6 +403,7 @@
                             </Border>
                         </Grid>
                     </Border>
+                    </views:DragonFrame>
                 </Grid>
 
                 <!-- First load -->
@@ -425,7 +425,7 @@
             </Grid>
 
             <!-- Status line: what the last purchase did -->
-            <Border Grid.Row="3" Background="#0A121B" BorderBrush="#33FFFFFF" BorderThickness="0,1,0,0" Padding="24,10"
+            <Border Grid.Row="3" Background="Transparent" BorderBrush="#33FFFFFF" BorderThickness="0,1,0,0" Padding="24,10"
                     IsVisible="{Binding HasStatus}">
                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                     <ProgressBar Width="60" Height="3" IsIndeterminate="True" Foreground="#E8B64C" Background="#26FFFFFF"
@@ -440,8 +440,8 @@
 
         <!-- Confirm step -->
         <Grid Background="#B3040709" IsVisible="{Binding IsConfirming}">
-            <Border Width="460" HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Background="#F20A121B" BorderBrush="#9A6B1E" BorderThickness="1" CornerRadius="10" Padding="26,22">
+            <views:DragonFrame Width="460" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Ground="Marble" Padding="26,22">
                 <StackPanel Spacing="14">
                     <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
                         <Image Source="{StaticResource CoinImage}" Width="26" Height="26" />
@@ -457,7 +457,7 @@
                                 HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="12,9" />
                     </Grid>
                 </StackPanel>
-            </Border>
+            </views:DragonFrame>
         </Grid>
     </Grid>
 </Window>

@@ -1,11 +1,13 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Portalkeeper.Views"
         xmlns:vm="using:Portalkeeper.ViewModels"
         xmlns:models="using:Portalkeeper.Models"
         x:Class="Portalkeeper.Views.RealmSelectionWindow" x:DataType="vm:MainViewModel"
         Width="640" Height="500" MinWidth="520" MinHeight="380"
         Title="Change Realm" WindowStartupLocation="CenterOwner" Background="#091019">
     <Window.Styles>
+        <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml" />
         <Style Selector="Button">
             <Setter Property="Background" Value="#111A24" />
             <Setter Property="Foreground" Value="#F6D477" />
@@ -23,20 +25,31 @@
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Padding" Value="14,12" />
         </Style>
-        <Style Selector="ListBoxItem:selected">
-            <Setter Property="Background" Value="#263441" />
+        <!-- DragonUI's warm highlight rather than the system accent -->
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#22E8B64C" />
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#3DE8B64C" />
         </Style>
     </Window.Styles>
-    <Grid RowDefinitions="Auto,*,Auto">
-        <Border Padding="20,16" BorderBrush="#A06E1B" BorderThickness="0,0,0,2" Background="#0A1119">
+    <Panel>
+    <!-- DragonUI: a rock ground in a bronze frame, sections as marble insets -->
+    <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
+    <Grid RowDefinitions="Auto,*,Auto" Margin="6,0,6,6">
+        <Border Padding="24,16" BorderBrush="#A06E1B" BorderThickness="0,0,0,2" ClipToBounds="True">
+            <Border.Background>
+                <ImageBrush Source="/Assets/Calendar/header-banner.png" Stretch="UniformToFill" Opacity="0.55" />
+            </Border.Background>
             <StackPanel Spacing="5">
                 <TextBlock Text="CHANGE REALM" Foreground="#FFD96B" FontSize="23" FontWeight="Bold" />
                 <TextBlock Text="Current realm" Foreground="#AFA28D" FontSize="11" />
                 <TextBlock Text="{Binding RealmName}" Foreground="#F8F0DF" TextWrapping="Wrap" />
             </StackPanel>
         </Border>
-        <ListBox Grid.Row="1" x:Name="RealmList" Margin="18" Background="#0E1823"
-                 BorderBrush="#6E5426" BorderThickness="1" ItemsSource="{Binding AvailableRealms}"
+        <views:DragonFrame Grid.Row="1" Margin="18" Ground="Marble" Padding="4">
+        <ListBox x:Name="RealmList" Background="Transparent"
+                 BorderThickness="0" ItemsSource="{Binding AvailableRealms}"
                  SelectionChanged="RealmList_SelectionChanged">
             <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="models:RealmChoice">
@@ -49,7 +62,8 @@
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
-        <Border Grid.Row="2" Padding="18,12" Background="#081019" BorderBrush="#5B431B" BorderThickness="0,1,0,0">
+        </views:DragonFrame>
+        <Border Grid.Row="2" Padding="18,12" Background="Transparent" BorderBrush="#5B431B" BorderThickness="0,1,0,0">
             <StackPanel Spacing="10">
                 <TextBlock x:Name="StatusText" Text="Choose a realm. Your WoW client selection stays the same."
                            Foreground="#AFA28D" TextWrapping="Wrap" />
@@ -60,4 +74,5 @@
             </StackPanel>
         </Border>
     </Grid>
+    </Panel>
 </Window>

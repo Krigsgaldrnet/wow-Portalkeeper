@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:Portalkeeper.Views"
         xmlns:vm="using:Portalkeeper.ViewModels"
         xmlns:models="using:Portalkeeper.Models"
         xmlns:conv="using:Avalonia.Data.Converters"
@@ -12,23 +13,31 @@
         Background="#071019">
 
     <Window.Styles>
+        <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml" />
         <Style Selector="TextBox">
-            <Setter Property="Background" Value="#0A141D"/>
+            <Setter Property="Background" Value="#1A140E"/>
             <Setter Property="Foreground" Value="#E9DFC9"/>
-            <Setter Property="BorderBrush" Value="#765522"/>
+            <Setter Property="BorderBrush" Value="#8C6A2E"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="12,9"/>
         </Style>
         <Style Selector="ComboBox">
-            <Setter Property="Background" Value="#0A141D"/>
+            <Setter Property="Background" Value="#1A140E"/>
             <Setter Property="Foreground" Value="#E9DFC9"/>
-            <Setter Property="BorderBrush" Value="#765522"/>
+            <Setter Property="BorderBrush" Value="#8C6A2E"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,7"/>
         </Style>
         <Style Selector="ListBox">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <!-- DragonUI's warm highlight rather than the system accent -->
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#22E8B64C" />
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#3DE8B64C" />
         </Style>
     </Window.Styles>
 
@@ -131,11 +140,14 @@
         </DataTemplate>
     </Window.Resources>
 
-    <Grid RowDefinitions="138,*,Auto">
+    <Panel>
+    <!-- DragonUI: a rock ground in a bronze frame, sections as marble insets -->
+    <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
+    <Grid RowDefinitions="138,*,Auto" Margin="6,0,6,6">
 
         <!-- Header -->
         <Grid Grid.Row="0">
-            <Image Source="/Assets/Calendar/calendar-banner.png"
+            <Image Source="/Assets/Calendar/header-banner.png"
                    Stretch="UniformToFill"
                    Opacity="0.8"/>
             <Border Background="#77030A10"/>
@@ -176,13 +188,10 @@
               ColumnSpacing="16">
 
             <!-- Roster -->
-            <Border Background="#0D1822"
-                    BorderBrush="#765522"
-                    BorderThickness="1"
-                    CornerRadius="6">
+            <views:DragonFrame Ground="Marble" Padding="4">
                 <Grid RowDefinitions="Auto,Auto,Auto,*">
                     <Border Grid.Row="0"
-                            Background="#111F2B"
+                            Background="Transparent"
                             BorderBrush="#4D3B20"
                             BorderThickness="0,0,0,1"
                             Padding="15,12">
@@ -302,14 +311,10 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
                 </Grid>
-            </Border>
+            </views:DragonFrame>
 
             <!-- Character Sheet -->
-            <Border Grid.Column="1"
-                    Background="#0B161F"
-                    BorderBrush="#765522"
-                    BorderThickness="1"
-                    CornerRadius="6">
+            <views:DragonFrame Grid.Column="1" Ground="Marble" Padding="4">
 
                 <Grid>
                     <StackPanel IsVisible="{Binding HasNoSelectedCharacter}"
@@ -336,7 +341,7 @@
 
                         <!-- Identity -->
                         <Border Grid.Row="0"
-                                Background="#111F2B"
+                                Background="Transparent"
                                 BorderBrush="#4D3B20"
                                 BorderThickness="0,0,0,1"
                                 Padding="18,14">
@@ -766,11 +771,11 @@
                         </Grid>
                     </Grid>
                 </Grid>
-            </Border>
+            </views:DragonFrame>
         </Grid>
 
         <Border Grid.Row="2"
-                Background="#08131C"
+                Background="Transparent"
                 BorderBrush="#40331E"
                 BorderThickness="0,1,0,0"
                 Padding="20,9">
@@ -787,4 +792,5 @@
         </Border>
 
     </Grid>
+    </Panel>
 </Window>
