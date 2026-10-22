@@ -8,6 +8,9 @@
     MinWidth="620"
     MinHeight="460"
     Title="Add Personal Addon"
+    WindowDecorations="BorderOnly"
+    ExtendClientAreaToDecorationsHint="True"
+    ExtendClientAreaTitleBarHeightHint="40"
     WindowStartupLocation="CenterOwner"
     Background="#091019">
 
@@ -43,8 +46,9 @@
 
     <Panel>
     <!-- DragonUI: a rock ground in a bronze frame, sections as marble insets -->
-    <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
-    <Grid RowDefinitions="Auto,*,Auto" Margin="6,0,6,6">
+    <views:DragonFrame Kind="Bronze" Ground="Rock" Scale="1.6" IsHitTestVisible="False" />
+    <views:DragonTitleBar Title="{Binding $parent[Window].Title}" />
+    <Grid RowDefinitions="Auto,*,Auto" Margin="16,40,16,16">
         <Border Grid.Row="0"
                 Background="#0A1119"
                 BorderBrush="#A06E1B"
@@ -57,10 +61,9 @@
                 <Grid Margin="24,10">
                     <StackPanel VerticalAlignment="Center"
                                 Spacing="2">
-                        <TextBlock Text="ADD PERSONAL ADDON"
-                                   Foreground="#FFD96B"
-                                   FontSize="22"
-                                   FontWeight="Bold" />
+                        <TextBlock Classes="dragon-title"
+                                   Text="ADD PERSONAL ADDON"
+                                   FontSize="22" />
                         <TextBlock Text="Discover an addon from a GitHub repository"
                                    Foreground="#E8DDC8"
                                    FontSize="12" />

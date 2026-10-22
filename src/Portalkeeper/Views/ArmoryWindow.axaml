@@ -9,8 +9,11 @@
         Title="Realm Armory"
         Width="1360" Height="850"
         MinWidth="1120" MinHeight="720"
+        WindowDecorations="BorderOnly"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="40"
         WindowStartupLocation="CenterOwner"
-        Background="#071019">
+        Background="#120D08">
 
     <Window.Styles>
         <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml" />
@@ -142,8 +145,9 @@
 
     <Panel>
     <!-- DragonUI: a rock ground in a bronze frame, sections as marble insets -->
-    <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
-    <Grid RowDefinitions="138,*,Auto" Margin="6,0,6,6">
+    <views:DragonFrame Kind="Bronze" Ground="Rock" Scale="1.6" IsHitTestVisible="False" />
+    <views:DragonTitleBar Title="{Binding $parent[Window].Title}" />
+    <Grid RowDefinitions="138,*,Auto" Margin="16,40,16,16">
 
         <!-- Header -->
         <Grid Grid.Row="0">
@@ -155,29 +159,27 @@
 
             <Grid Margin="34,18" ColumnDefinitions="*,Auto">
                 <StackPanel VerticalAlignment="Center" Spacing="2">
-                    <TextBlock Text="REALM ARMORY"
-                               FontSize="33"
-                               FontWeight="Bold"
-                               Foreground="#F3D58C"/>
+                    <TextBlock Classes="dragon-title"
+                               Text="REALM ARMORY"
+                               FontSize="33" />
                     <TextBlock Text="Heroes, adventurers, and denizens of the realm"
                                FontSize="15"
                                Foreground="#D8C9A7"/>
-                    <Border Width="290" Height="1" Background="#A67528" Margin="0,9,0,0"/>
+                    <Border Width="290" Height="1" Background="#A67528" Margin="0,9,0,0" HorizontalAlignment="Left"/>
                 </StackPanel>
 
                 <StackPanel Grid.Column="1"
                             VerticalAlignment="Center"
                             HorizontalAlignment="Right"
                             Spacing="4">
-                    <TextBlock Text="PORTALKEEPER"
+                    <TextBlock Classes="dragon-brand"
+                               Text="PORTALKEEPER"
                                HorizontalAlignment="Right"
-                               FontWeight="Bold"
-                               FontSize="14"
-                               Foreground="#C6A45E"/>
-                    <TextBlock Text="REALM CHARACTER ARCHIVE"
+                               FontSize="14" />
+                    <TextBlock Classes="dragon-tagline"
+                               Text="REALM CHARACTER ARCHIVE"
                                HorizontalAlignment="Right"
-                               FontSize="10"
-                               Foreground="#8F826F"/>
+                               FontSize="10" />
                 </StackPanel>
             </Grid>
         </Grid>
@@ -211,7 +213,7 @@
                                         Orientation="Horizontal"
                                         Spacing="5"
                                         VerticalAlignment="Center">
-                                <Border Background="#101B25"
+                                <Border Background="#1F170F"
                                         BorderBrush="#3B3223"
                                         BorderThickness="1"
                                         CornerRadius="9"
@@ -252,7 +254,7 @@
                             <DataTemplate x:DataType="models:ArmoryCharacterSummary">
                                 <Border Padding="10,8"
                                         Margin="2"
-                                        Background="#09131C"
+                                        Background="#1A140E"
                                         BorderBrush="#332A1D"
                                         BorderThickness="1"
                                         CornerRadius="4">
@@ -260,7 +262,7 @@
                                           ColumnSpacing="9">
                                         <Border Width="40"
                                                 Height="40"
-                                                Background="#14212C"
+                                                Background="#241B12"
                                                 BorderBrush="{Binding ClassAccentBrush}"
                                                 BorderThickness="2"
                                                 CornerRadius="20"
@@ -350,7 +352,7 @@
 
                                 <Border Width="68"
                                         Height="68"
-                                        Background="#0A141D"
+                                        Background="#1A140E"
                                         BorderBrush="{Binding SelectedCharacter.ClassAccentBrush}"
                                         BorderThickness="3"
                                         CornerRadius="34">
@@ -427,7 +429,7 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="models:ArmoryEquipmentSlotView">
                                             <Border Margin="0,0,0,5"
-                                                    Background="#08121A"
+                                                    Background="#17110B"
                                                     BorderBrush="{Binding AccentBrush}"
                                                     BorderThickness="1"
                                                     CornerRadius="4"
@@ -437,7 +439,7 @@
                                                                     ContentTemplate="{StaticResource ArmoryItemTooltipTemplate}"/>
                                                 </ToolTip.Tip>
                                                 <Grid ColumnDefinitions="50,*">
-                                                    <Border Background="#111D27"
+                                                    <Border Background="#211910"
                                                             BorderBrush="{Binding AccentBrush}"
                                                             BorderThickness="0,0,2,0"
                                                             CornerRadius="4,0,0,4">
@@ -488,7 +490,7 @@
                                 <!-- Center "paper doll" -->
                                 <Border Grid.Row="0"
                                         Grid.Column="1"
-                                        Background="#09141D"
+                                        Background="#150F0A"
                                         BorderBrush="#4C3A20"
                                         BorderThickness="1"
                                         CornerRadius="8"
@@ -576,7 +578,7 @@
                                               Margin="16,0,16,14"
                                               ColumnDefinitions="*,*,*"
                                               ColumnSpacing="7">
-                                            <Border Background="#0A141C"
+                                            <Border Background="#1A140E"
                                                     BorderBrush="#342A1D"
                                                     BorderThickness="1"
                                                     CornerRadius="4"
@@ -592,7 +594,7 @@
                                                 </StackPanel>
                                             </Border>
                                             <Border Grid.Column="1"
-                                                    Background="#0A141C"
+                                                    Background="#1A140E"
                                                     BorderBrush="#342A1D"
                                                     BorderThickness="1"
                                                     CornerRadius="4"
@@ -608,7 +610,7 @@
                                                 </StackPanel>
                                             </Border>
                                             <Border Grid.Column="2"
-                                                    Background="#0A141C"
+                                                    Background="#1A140E"
                                                     BorderBrush="#342A1D"
                                                     BorderThickness="1"
                                                     CornerRadius="4"
@@ -634,7 +636,7 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="models:ArmoryEquipmentSlotView">
                                             <Border Margin="0,0,0,5"
-                                                    Background="#08121A"
+                                                    Background="#17110B"
                                                     BorderBrush="{Binding AccentBrush}"
                                                     BorderThickness="1"
                                                     CornerRadius="4"
@@ -663,7 +665,7 @@
                                                                    TextAlignment="Right"/>
                                                     </StackPanel>
                                                     <Border Grid.Column="1"
-                                                            Background="#111D27"
+                                                            Background="#211910"
                                                             BorderBrush="{Binding AccentBrush}"
                                                             BorderThickness="2,0,0,0"
                                                             CornerRadius="0,4,4,0">
@@ -698,7 +700,7 @@
                                 <!-- Bottom jewelry + weapons -->
                                 <Border Grid.Row="1"
                                         Grid.ColumnSpan="3"
-                                        Background="#09141D"
+                                        Background="#150F0A"
                                         BorderBrush="#43351F"
                                         BorderThickness="1"
                                         CornerRadius="5"
@@ -715,7 +717,7 @@
                                                 <Border Width="132"
                                                         Height="68"
                                                         Margin="4"
-                                                        Background="#071019"
+                                                        Background="#120D08"
                                                         BorderBrush="{Binding AccentBrush}"
                                                         BorderThickness="1"
                                                         CornerRadius="4">
@@ -725,7 +727,7 @@
                                                     </ToolTip.Tip>
                                                     <Grid ColumnDefinitions="48,*"
                                                           Margin="4">
-                                                        <Border Background="#111D27"
+                                                        <Border Background="#211910"
                                                                 BorderBrush="{Binding AccentBrush}"
                                                                 BorderThickness="1"
                                                                 CornerRadius="3"

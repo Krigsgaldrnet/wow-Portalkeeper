@@ -2,7 +2,10 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:views="using:Portalkeeper.Views" xmlns:vm="using:Portalkeeper.ViewModels"
  xmlns:models="using:Portalkeeper.Models" x:Class="Portalkeeper.Views.ManagePatchesWindow"
  x:DataType="vm:MainViewModel" Title="Portalkeeper — Realm Patches" Width="820" Height="520"
- MinWidth="640" MinHeight="360" Background="#091019" WindowStartupLocation="CenterOwner">
+ MinWidth="640" MinHeight="360" Background="#091019" WindowDecorations="BorderOnly"
+ ExtendClientAreaToDecorationsHint="True"
+ ExtendClientAreaTitleBarHeightHint="40"
+ WindowStartupLocation="CenterOwner">
 
  <!-- This window has a fixed dark surface; keep actions legible in either system theme. -->
     <Window.Styles>
@@ -30,10 +33,11 @@
     </Window.Styles>
 
  <Panel>
- <views:DragonFrame Kind="Bronze" Ground="Rock" IsHitTestVisible="False" />
- <Grid Margin="30,24,30,30" RowDefinitions="Auto,*,Auto" RowSpacing="16">
+ <views:DragonFrame Kind="Bronze" Ground="Rock" Scale="1.6" IsHitTestVisible="False" />
+ <views:DragonTitleBar Title="{Binding $parent[Window].Title}" />
+ <Grid Margin="36,52,36,30" RowDefinitions="Auto,*,Auto" RowSpacing="16">
   <StackPanel Spacing="6">
-   <TextBlock Text="REALM PATCHES" FontSize="24" FontWeight="Bold" Foreground="#FFD96B" />
+   <TextBlock Classes="dragon-title" Text="REALM PATCHES" FontSize="24" />
    <TextBlock Text="Required patches must be valid before launch. Existing files are inspected; changes retain backups."
     TextWrapping="Wrap" Foreground="#AFA28D" />
   </StackPanel>
