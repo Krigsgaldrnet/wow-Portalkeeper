@@ -387,7 +387,8 @@
                     <StackPanel HorizontalAlignment="Center" Spacing="4">
                         <TextBlock Classes="serif" Text="{Binding EnterRealmButtonText}" FontSize="26" FontWeight="Bold"
                                    LetterSpacing="2" HorizontalAlignment="Center" />
-                        <TextBlock Text="{Binding EnterRealmSubText}" FontSize="12" FontWeight="Normal" HorizontalAlignment="Center" />
+                        <TextBlock Text="{Binding EnterRealmSubText}" FontSize="12" FontWeight="Normal" HorizontalAlignment="Center"
+                                   IsVisible="{Binding EnterRealmSubText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     </StackPanel>
                 </Button>
             </Grid>

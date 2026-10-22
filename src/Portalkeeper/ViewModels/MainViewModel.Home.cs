@@ -24,8 +24,6 @@ public sealed partial class MainViewModel
         _ => "Unknown"
     };
 
-    private static string Capitalize(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
-
     public bool RealmBooting => RealmConfigured && _realmHealthState == RealmHealthState.Booting;
 
     /// <summary>Where the boot is: the world server loading, or how many bots are in.</summary>
@@ -108,10 +106,11 @@ public sealed partial class MainViewModel
         _ => LaunchStatus
     };
 
+    // Booting or restarting soon, the button says only STARTING UP / RESTARTING: the status card
+    // beside it already gives the bot count or the restart time.
     public string EnterRealmSubText => Card switch
     {
-        HomeCard.Ready => RealmBooting ? Capitalize(BootProgressText) + "..."
-            : RestartImminent ? LiveRestartText
+        HomeCard.Ready => RealmBooting || RestartImminent ? ""
             : "Game is up to date",
         HomeCard.Playing => "Have fun out there",
         HomeCard.Syncing => _isInstallingRequired ? "Updating realm files..." : "Checking realm files...",

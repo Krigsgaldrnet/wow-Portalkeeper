@@ -154,6 +154,15 @@ internal static partial class Program
             MainViewModel.DescribeBosses([new("Azuregos", "Azshara", true, null), new("Ysondre", "Duskwood", false, 1900000000)]) == "1 of 2 world bosses up"
             && MainViewModel.DescribeBosses([new("Azuregos", "Azshara", false, 1900000000)]) == "0 of 1 world boss up");
 
+        check("players online read without the bots (every bot is online once the realm is up)",
+            MainViewModel.DescribePlayers(new(2, 2170)) == "2 players online" && MainViewModel.DescribePlayers(new(1, 0)) == "1 player online");
+        check("the online count shows while the realm is up, not while it boots or its world is down",
+            MainViewModel.ShowsPlayers(Portalkeeper.Models.RealmHealthState.Online)
+            && MainViewModel.ShowsPlayers(Portalkeeper.Models.RealmHealthState.Checking)
+            && !MainViewModel.ShowsPlayers(Portalkeeper.Models.RealmHealthState.Booting)
+            && !MainViewModel.ShowsPlayers(Portalkeeper.Models.RealmHealthState.Offline)
+            && !MainViewModel.ShowsPlayers(Portalkeeper.Models.RealmHealthState.AuthOnly));
+
         var soon = DateTimeOffset.FromUnixTimeSeconds(1792688600);
         check("a restart within 10 minutes closes ENTER REALM",
             MainViewModel.IsRestartImminent(soon.AddMinutes(4), soon) && MainViewModel.IsRestartImminent(soon.AddSeconds(-20), soon));
