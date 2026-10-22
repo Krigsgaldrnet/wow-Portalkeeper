@@ -109,6 +109,34 @@ internal static partial class Program
         check("no connection at all: nothing was sent",
             (await Service(offline).BuyAsync(session, 201, 7)).Outcome == ShopPurchaseOutcome.NotTried);
 
+        // Offers locked by the realm's progression: read, shown as locked, never bought.
+        portal = new FakeShopPortal
+        {
+            ListingJson = """
+                {"balance":200,
+                 "characters":[{"guid":7,"name":"Alys","race":10,"class":2,"gender":1,"level":62,"online":true}],
+                 "offers":[{"id":207,"category":"mount","name":"Gargantuan Grrloc","price":45,"phase":1,"locked":true,"unlock":" Defeat Ragnaros in Molten Core with any character to unlock it. ","owned":[],"cannot":[]},
+                           {"id":208,"category":"mount","name":"Tuskarr Hermit Crab","price":45,"phase":1,"locked":true,"unlock":"Comes to the realm with The Burning Crusade.","owned":[7],"cannot":[]},
+                           {"id":206,"category":"mount","name":"Whoofle Bramblewing","price":0,"phase":0,"locked":false,"unlock":"","owned":[],"cannot":[]}]}
+                """,
+        };
+        listing = await Service(portal).GetListingAsync(session);
+        check("a locked offer is read with what unlocks it, trimmed",
+            listing?.Offers[0] is { Locked: true, Unlock: "Defeat Ragnaros in Molten Core with any character to unlock it." } && listing.Offers[2] is { Locked: false, Unlock: "" });
+        using (var shop = Shop(portal))
+        {
+            await shop.LoadAsync();
+            ShopOfferView Card(uint id) => shop.Offers.First(o => o.Offer.Id == id);
+            check("a locked offer can't be bought and says what unlocks it", Card(207) is
+                { IsLocked: true, CanBuy: false, StateText: "Locked", UnlockText: "Defeat Ragnaros in Molten Core with any character to unlock it." });
+            check("a locked offer without a reason still says why", new ShopOfferView(new ShopOffer(1, "mount", "X", "", "", 5, [], [], Locked: true))
+                .UnlockText == "None of your characters has come far enough to buy this yet.");
+            check("a locked offer the character owns already shows as owned", Card(208) is { IsLocked: false, IsOwned: true, StateText: "Owned" });
+            check("an open offer can be bought", Card(206) is { IsLocked: false, CanBuy: true });
+            shop.AskToBuy(Card(207));
+            check("BUY does nothing on a locked offer", !shop.IsConfirming && portal.Buys == 0);
+        }
+
         // The Shop window's view model: owned / can't use per character, the balance, the confirm step.
         portal = new FakeShopPortal();
         using (var shop = Shop(portal))

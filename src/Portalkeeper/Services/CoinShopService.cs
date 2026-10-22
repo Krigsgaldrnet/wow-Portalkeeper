@@ -18,8 +18,10 @@ public sealed record ShopCharacter(uint Guid, string Name, int Race, int Class, 
 /// <param name="Owned">Characters that have it already (or have the service waiting for their next login).</param>
 /// <param name="Cannot">Characters that can't use it (race, class, level, a skill it needs).</param>
 /// <param name="Preview">A picture of it that can be turned, when the realm has one.</param>
+/// <param name="Locked">Not for sale to the account yet: none of its characters has come far enough in the realm's progression.</param>
+/// <param name="Unlock">What opens a locked offer ("Defeat Ragnaros in Molten Core"), or empty.</param>
 public sealed record ShopOffer(uint Id, string Category, string Name, string Description, string Icon, int Price,
-    IReadOnlyList<uint> Owned, IReadOnlyList<uint> Cannot, ShopPreview? Preview = null);
+    IReadOnlyList<uint> Owned, IReadOnlyList<uint> Cannot, ShopPreview? Preview = null, bool Locked = false, string Unlock = "");
 
 /// <summary>A turntable picture: <see cref="Frames"/> pictures side by side, one per angle as the model turns.</summary>
 public sealed record ShopPreview(Uri Url, int Frames);
@@ -41,7 +43,7 @@ public enum ShopPurchaseOutcome
     Unknown,
 }
 
-/// <param name="Code">The game server's reason for a refusal: closed, no_offer, no_character, busy, owned, cannot, balance.</param>
+/// <param name="Code">The game server's reason for a refusal: closed, no_offer, no_character, busy, locked, owned, cannot, balance.</param>
 public sealed record ShopPurchaseResult(ShopPurchaseOutcome Outcome, string Message, int? Balance = null, string? Code = null);
 
 /// <summary>
@@ -84,7 +86,8 @@ public sealed class CoinShopService
                 .Select(c => new ShopCharacter(c.Guid, c.Name ?? "", c.Race, c.Class, c.Gender, c.Level, c.Online)).ToArray(),
             (body.Offers ?? []).OfType<OfferBody>().Where(o => o.Id > 0)
                 .Select(o => new ShopOffer(o.Id, (o.Category ?? "").Trim().ToLowerInvariant(), o.Name ?? "", o.Description ?? "",
-                    o.Icon ?? "", Math.Max(0, o.Price), o.Owned ?? [], o.Cannot ?? [], Preview(o.Preview))).ToArray(),
+                    o.Icon ?? "", Math.Max(0, o.Price), o.Owned ?? [], o.Cannot ?? [], Preview(o.Preview),
+                    o.Locked, (o.Unlock ?? "").Trim())).ToArray(),
             body.CachedAt is > 0 and < 253402300799 ? DateTimeOffset.FromUnixTimeSeconds(body.CachedAt) : DateTimeOffset.UtcNow);
     }
 
@@ -197,7 +200,9 @@ public sealed class CoinShopService
         [property: JsonPropertyName("price")] int Price,
         [property: JsonPropertyName("owned")] uint[]? Owned,
         [property: JsonPropertyName("cannot")] uint[]? Cannot,
-        [property: JsonPropertyName("preview")] PreviewBody? Preview);
+        [property: JsonPropertyName("preview")] PreviewBody? Preview,
+        [property: JsonPropertyName("locked")] bool Locked,
+        [property: JsonPropertyName("unlock")] string? Unlock);
     private sealed record PreviewBody(
         [property: JsonPropertyName("url")] string? Url,
         [property: JsonPropertyName("frames")] int Frames);
