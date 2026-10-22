@@ -14,7 +14,7 @@
         MinHeight="800"
         WindowDecorations="BorderOnly"
         ExtendClientAreaToDecorationsHint="True"
-        ExtendClientAreaTitleBarHeightHint="40"
+        ExtendClientAreaTitleBarHeightHint="48"
         WindowStartupLocation="CenterOwner"
         Background="#0B1017">
 
@@ -62,7 +62,7 @@
   <!-- DragonUI: a rock ground in a bronze frame, sections as insets -->
   <views:DragonFrame Kind="Bronze" Ground="Rock" Scale="1.6" IsHitTestVisible="False"/>
   <views:DragonTitleBar Title="{Binding $parent[Window].Title}" />
-  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="16,40,16,16">
+  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="16,48,16,16">
 
     <!-- Scenic Portalkeeper header -->
     <Border Grid.Row="0"

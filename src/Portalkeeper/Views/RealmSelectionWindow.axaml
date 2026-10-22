@@ -6,7 +6,7 @@
         x:Class="Portalkeeper.Views.RealmSelectionWindow" x:DataType="vm:MainViewModel"
         Width="640" Height="500" MinWidth="520" MinHeight="380"
         Title="Change Realm" WindowDecorations="BorderOnly"
-        ExtendClientAreaToDecorationsHint="True" ExtendClientAreaTitleBarHeightHint="40"
+        ExtendClientAreaToDecorationsHint="True" ExtendClientAreaTitleBarHeightHint="48"
         WindowStartupLocation="CenterOwner" Background="#091019">
     <Window.Styles>
         <StyleInclude Source="avares://Portalkeeper/Views/DragonStyles.axaml" />
@@ -39,7 +39,7 @@
     <!-- DragonUI: a rock ground in a bronze frame, sections as marble insets -->
     <views:DragonFrame Kind="Bronze" Ground="Rock" Scale="1.6" IsHitTestVisible="False" />
     <views:DragonTitleBar Title="{Binding $parent[Window].Title}" />
-    <Grid RowDefinitions="Auto,*,Auto" Margin="16,40,16,16">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="16,48,16,16">
         <Border Padding="24,16" BorderBrush="#A06E1B" BorderThickness="0,0,0,2" ClipToBounds="True">
             <Border.Background>
                 <ImageBrush Source="/Assets/Calendar/header-banner.png" Stretch="UniformToFill" Opacity="0.55" />

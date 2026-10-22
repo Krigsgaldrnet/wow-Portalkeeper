@@ -30,7 +30,7 @@ internal static class DragonArt
 
 /// <summary>
 /// A nine-slice frame around its child, with a tiled ground under it. Corners sit at DragonUI's
-/// offsets from this control's edges (so Bronze reaches a little outside them) and edges stretch
+/// offsets from this control's edges and edges stretch
 /// between the corners. <see cref="Scale"/> sizes the art: 1 is DragonUI's own UI units.
 /// </summary>
 public sealed class DragonFrame : Decorator
@@ -67,13 +67,15 @@ public sealed class DragonFrame : Decorator
 
     private static Piece P(double l, double t, double r, double b, double w, double h) => new(new Rect(l, t, r - l, b - t), w, h);
 
-    // UI-Frame-Bronze-* (ForeverUI\chrome-frame), NoPortraitFrameTemplate's offsets.
+    // UI-Frame-Bronze-* (ForeverUI\chrome-frame). NoPortraitFrameTemplate's offsets (-13,-16 / 2,-16 /
+    // -13,8 / 2,8) hang the rims outside the frame, which a window can't show: its top rim was cut off
+    // entirely. These put each rim's outer edge on the control's edge; the title band is 30 units tall.
     private static readonly Layout BronzeLayout = new(
         P(466, 268, 656, 364, 95, 48), P(664, 268, 854, 364, 95, 48),
         P(664, 124, 854, 204, 95, 40), P(4, 388, 194, 468, 95, 40),
         P(202, 268, 458, 458, 128, 95), P(400, 4, 656, 204, 128, 100),
         P(4, 4, 194, 260, 95, 128), P(202, 4, 392, 260, 95, 128),
-        new Point(-13, -16), new Point(2, -16), new Point(-13, 8), new Point(2, 8), 4);
+        new Point(-11.5, -12), new Point(1.5, -12), new Point(-11.5, 5), new Point(1.5, 5), 4);
 
     // UI-Frame-Filigree-* (Professions\ProfessionsUI), InsetFrameTemplate: rail pushed 2.5 out.
     private static readonly Layout InsetLayout = Filigree(16, 34, 2.5);
