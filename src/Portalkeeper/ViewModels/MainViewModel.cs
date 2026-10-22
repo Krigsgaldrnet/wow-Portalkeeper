@@ -567,10 +567,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 ? "WORLD OF WARCRAFT RUNNING"
             : RealmBooting && GameReadyToEnter
                 ? "STARTING UP"
+            : RestartImminent && GameReadyToEnter
+                ? "RESTARTING"
                 : "ENTER REALM";
 
-    // Evermore fork: the game is ready but login isn't open yet, so there's nothing to enter.
-    public bool CanEnterRealm => GameReadyToEnter && !RealmBooting;
+    // Evermore fork: the game is ready but login isn't open yet, or the realm is about to restart,
+    // so there's nothing to enter.
+    public bool CanEnterRealm => GameReadyToEnter && !RealmBooting && !RestartImminent;
 
     /// <summary>Everything on this PC is ready to launch, whatever the realm is doing.</summary>
     private bool GameReadyToEnter =>
@@ -602,9 +605,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             if (RealmBranding.IsBuiltIn(_realmInfo))
             {
                 LaunchStatus = "Checking the realm...";
-                await RefreshRealmHealthAsync();
+                await Task.WhenAll(RefreshRealmHealthAsync(), RefreshHomeInfoAsync(whatsNew: false));
                 if (RealmBooting)
                     throw new InvalidOperationException("The realm is still starting up (" + BootProgressText + "). ENTER REALM opens once login does.");
+                if (RestartImminent)
+                    throw new InvalidOperationException(LiveRestartText + ". ENTER REALM opens again once it's back up.");
                 LaunchStatus = "Preparing client...";
             }
             await StopOptionalAddonUpdatesAsync();
