@@ -567,9 +567,9 @@ public sealed class ShopOfferView : ViewModelBase
     public bool IsOwned { get => _isOwned; private set => SetProperty(ref _isOwned, value); }
     /// <summary>Not for sale to the account yet (an owned one shows as owned): none of its characters has come far enough.</summary>
     public bool IsLocked { get => _isLocked; private set => SetProperty(ref _isLocked, value); }
-    /// <summary>What opens a locked offer, for the stage.</summary>
+    /// <summary>What opens a locked offer, for the stage: the server's sentence as it is.</summary>
     public string UnlockText => Offer.Unlock.Length > 0
-        ? Offer.Unlock.TrimEnd('.') + " with any character to unlock it."
+        ? Offer.Unlock
         : "None of your characters has come far enough to buy this yet.";
 
     public void Update(ShopCharacterView? character, int balance)
