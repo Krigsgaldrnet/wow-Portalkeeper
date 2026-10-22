@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Portalkeeper.Models;
@@ -40,6 +41,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     }
     private RealmInfo? _realmInfo;
     private readonly RealmConfigurationStore _realmStore = new();
+    private readonly RealmConfigurationUpdateService _realmConfigUpdates = new();
+    // Health loop ticks (45 s each) between two realm.conf checks.
+    private const int RealmConfigEveryTicks = 2;
+    private int _realmConfigTicks;
+    private bool _isCheckingRealmConfig;
+    // The last realm.conf the tick refreshed for: one that couldn't be applied isn't retried every tick.
+    private string? _realmConfigTried;
     private readonly PatchService _patchService = new();
     private readonly RealmRuntimeResolver _realmRuntimeResolver = new();
     private readonly SemaphoreSlim _configLock = new(1, 1);
@@ -698,6 +706,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         {
             await RefreshRealmHealthAsync();
             _ = RefreshHomeInfoOnTickAsync();
+            _ = CheckRealmConfigurationOnTickAsync();
             // A shop that couldn't be asked at login (the world server restarting) is asked again
             // once the world is back, every few minutes; once the portal has answered, never.
             if (_realmHealthState is RealmHealthState.Online or RealmHealthState.WorldOnly)
@@ -799,6 +808,32 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         }
         // In the background: callers (CHECK AGAIN, realm choice) shouldn't wait for patch downloads.
         _ = SyncRequiredAndShareAsync();
+    }
+
+    /// <summary>
+    /// A launcher left open picks up a new realm.conf (a new patch version, a changed addon) on its own:
+    /// every few health ticks the realm's ConfigURL is asked, and only when it differs from the stored
+    /// file is the realm refreshed as CHECK AGAIN would, which installs the new patches. Waits while
+    /// anything else runs (the game included); the next tick asks again.
+    /// </summary>
+    private async Task CheckRealmConfigurationOnTickAsync()
+    {
+        if (++_realmConfigTicks % RealmConfigEveryTicks != 0 || _isCheckingRealmConfig) return;
+        var path = _activeRealmPath;
+        var configUrl = _realmInfo?.ConfigUrl ?? "";
+        if (path is null || configUrl.Length == 0 || !IsIdleForUpdate) return;
+        _isCheckingRealmConfig = true;
+        try
+        {
+            var check = await _realmConfigUpdates.CheckForUpdateAsync(path, configUrl);
+            if (check.Status != UpdateCheckStatus.UpdateAvailable || check.RemoteBytes is null) return;
+            var version = Convert.ToHexString(SHA256.HashData(check.RemoteBytes));
+            if (version == _realmConfigTried || path != _activeRealmPath || !IsIdleForUpdate) return;
+            _realmConfigTried = version;
+            await RediscoverRealmConfigurationAsync();
+        }
+        catch (Exception) { } // asked again on a later tick
+        finally { _isCheckingRealmConfig = false; }
     }
 
     private async Task LoadRealmConfigurationAsync(string? selectedPath = null)

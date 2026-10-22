@@ -35,6 +35,18 @@ internal static partial class Program
             Check("seed never adds to a store that has another realm", !RealmBranding.SeedRealmStore(other)
                 && !File.Exists(Path.Combine(other, RealmBranding.RealmFileName)));
 
+            // realm.conf check the open launcher runs every other health tick: only a changed file refreshes.
+            var storedPath = Path.Combine(store, RealmBranding.RealmFileName);
+            var stored = File.ReadAllBytes(storedPath);
+            var changedConf = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(stored).Replace("Name=Azeroth", "Name=Azeroth Changed"));
+            var same = await new RealmConfigurationUpdateService(_ => Task.FromResult(stored)).CheckForUpdateAsync(storedPath, seeded.ConfigUrl);
+            Check("unchanged realm.conf asks for no refresh", same.Status == UpdateCheckStatus.NoUpdateAvailable);
+            var newer = await new RealmConfigurationUpdateService(_ => Task.FromResult(changedConf)).CheckForUpdateAsync(storedPath, seeded.ConfigUrl);
+            Check("changed realm.conf asks for a refresh", newer.Status == UpdateCheckStatus.UpdateAvailable);
+            var offline = await new RealmConfigurationUpdateService(_ => throw new HttpRequestException("offline")).CheckForUpdateAsync(storedPath, seeded.ConfigUrl);
+            Check("unreachable realm.conf asks for no refresh and keeps the file",
+                offline.Status == UpdateCheckStatus.DownloadFailure && File.ReadAllBytes(storedPath).SequenceEqual(stored));
+
             // Which patches have torrents.
             Check("patches-folder patch has a torrent name", RealmBranding.HostedPatchFileName(RealmBranding.PatchBaseUrl + "patch-P.MPQ") == "patch-P.MPQ");
             Check("escaped name is decoded", RealmBranding.HostedPatchFileName(RealmBranding.PatchBaseUrl + "Patch%2DH.MPQ") == "Patch-H.MPQ");
