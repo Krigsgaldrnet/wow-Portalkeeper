@@ -448,6 +448,9 @@
                                     </Grid>
                                     <TextBlock Text="{Binding SelectedOffer.Description}" FontSize="12.5" Foreground="#C9BCA6"
                                                TextWrapping="Wrap" MaxLines="3" TextTrimming="WordEllipsis" ToolTip.Tip="{Binding SelectedOffer.Description}" />
+                                    <!-- Account-wide: the realm shares it, nothing is mailed -->
+                                    <TextBlock Text="{Binding SelectedOffer.AccountCaption}" IsVisible="{Binding SelectedOffer.IsAccount}"
+                                               FontSize="12" Foreground="{Binding SelectedOffer.AccentBrush}" TextWrapping="Wrap" />
                                     <!-- Locked: what opens it -->
                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="7" IsVisible="{Binding SelectedOffer.IsLocked}">
                                         <Path Data="{StaticResource LockIcon}" Fill="#E8CFA6" Stretch="Uniform" Width="11" Height="12" VerticalAlignment="Center" />

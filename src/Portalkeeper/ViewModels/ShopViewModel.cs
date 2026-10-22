@@ -231,15 +231,18 @@ public sealed class ShopViewModel : ViewModelBase, IDisposable
         }
     }
     public bool IsConfirming => _pendingOffer is not null;
+    /// <summary>An account-wide offer is bought for the account; anything else for the picked character.</summary>
     public string ConfirmText => _pendingOffer is null || _pendingCharacter is null ? ""
-        : _pendingOffer.IsFree ? $"Get {_pendingOffer.Name} for free for {_pendingCharacter.Name}?"
-        : $"Buy {_pendingOffer.Name} for {_pendingOffer.PriceText} for {_pendingCharacter.Name}?";
+        : _pendingOffer.IsFree ? $"Get {_pendingOffer.Name} for free for {ConfirmWho}?"
+        : $"Buy {_pendingOffer.Name} for {_pendingOffer.PriceText} for {ConfirmWho}?";
+    private string ConfirmWho => _pendingOffer is { IsAccount: true } ? "your account" : _pendingCharacter?.Name ?? "";
     public string ConfirmDetail => _pendingOffer is null ? ""
-        : _pendingOffer.IsFree ? _pendingOffer.Description
-        : (_balance >= _pendingOffer.Price
+        : (_pendingOffer.IsFree ? ""
+            : _balance >= _pendingOffer.Price
             ? $"You have {BalanceText} {CoinWord(_balance)}; {(_balance - _pendingOffer.Price).ToString("N0", CultureInfo.CurrentCulture)} will be left. "
             : $"You have {BalanceText} {CoinWord(_balance)}, which isn't enough for this. ")
-          + _pendingOffer.Description;
+          + _pendingOffer.Description
+          + (_pendingOffer.IsAccount ? (_pendingOffer.Description.Length > 0 ? " " : "") + ShopOfferView.AccountText : "");
 
     private static string CoinWord(int count) => count == 1 ? "coin" : "coins";
 
@@ -669,6 +672,10 @@ public sealed class ShopOfferView : ViewModelBase
     public bool IsFree => Offer.Price == 0;
     public bool ShowCoin => !IsFree;
     public string CategoryTitle => ShopCategoryView.TitleOf(Offer.Category);
+    /// <summary>Bought for the whole account: the realm shares it, so no character is picked and nothing is mailed.</summary>
+    public bool IsAccount => Offer.Account;
+    public const string AccountText = "Every character on your account gets it.";
+    public string AccountCaption => AccountText;
     /// <summary>The tile's turntable picture, small, once it's here; until then (or without one) the drawn icon.</summary>
     public Bitmap? Picture { get => _picture; set { if (SetProperty(ref _picture, value)) OnPropertyChanged(nameof(ShowIcon)); } }
     public int PictureFrames => Offer.Preview?.Frames ?? 1;

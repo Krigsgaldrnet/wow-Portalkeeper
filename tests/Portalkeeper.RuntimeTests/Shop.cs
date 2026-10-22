@@ -17,6 +17,7 @@ internal static partial class Program
          "offers":[{"id":1,"category":"service","name":"Character Rename","description":"A new name.","icon":"","price":20,"owned":[7],"cannot":[]},
                    {"id":101,"category":"pet","name":"Red Panda","description":"A companion.","icon":"","price":10,"owned":[],"cannot":[],"preview":{"url":"file:///etc/passwd","frames":36}},
                    {"id":201,"category":"mount","name":"Great Red Panda","description":"A mount.","icon":"","price":40,"owned":[],"cannot":[9],"preview":{"url":"https://portal.test/realm/shop/201.webp?v=5","frames":36}},
+                   {"id":202,"category":"mount","name":"Ashen Steed","description":"A horse.","icon":"","price":30,"account":true,"owned":[],"cannot":[]},
                    {"id":301,"category":"Toy","name":"Odd Thing","description":"","icon":"","price":50,"owned":[],"cannot":[]}],
          "cached_at":1760000000}
         """;
@@ -34,13 +35,14 @@ internal static partial class Program
         var portal = new FakeShopPortal();
         var listing = await Service(portal).GetListingAsync(session);
         check("the shop listing is read: balance, characters, offers",
-            listing is { Balance: 45, Characters.Count: 2, Offers.Count: 4 }
+            listing is { Balance: 45, Characters.Count: 2, Offers.Count: 5 }
             && listing.Characters[1] is { Guid: 9, Name: "Bronn", Race: 3, Class: 1, Level: 12, Online: true }
-            && listing.Offers[2] is { Id: 201, Category: "mount", Price: 40 }
+            && listing.Offers[2] is { Id: 201, Category: "mount", Price: 40, Account: false }
+            && listing.Offers[3] is { Id: 202, Account: true }
             && listing.Offers[0].Owned.SequenceEqual([7u]) && listing.Offers[2].Cannot.SequenceEqual([9u])
             && listing.CachedAt == DateTimeOffset.FromUnixTimeSeconds(1760000000));
         check("the listing is asked for with the launcher login", portal.Authorized == 1 && portal.Unauthorized == 0);
-        check("an unknown category is kept, lower-cased", listing?.Offers[3].Category == "toy");
+        check("an unknown category is kept, lower-cased", listing?.Offers[4].Category == "toy");
         check("an offer's turntable picture is read",
             listing?.Offers[2].Preview is { Frames: 36 } preview && preview.Url.AbsoluteUri == "https://portal.test/realm/shop/201.webp?v=5");
         check("a picture that isn't http(s) is left out, and offers without one have none",
@@ -145,7 +147,14 @@ internal static partial class Program
             check("the shop opens on the online character", shop.SelectedCharacter?.Name == "Bronn" && shop.Balance == 45);
             check("categories: mounts, companions, services, then the rest, and no ALL tab",
                 string.Join(",", shop.Categories.Select(c => c.Title)) == "MOUNTS,COMPANIONS,SERVICES,TOY");
-            check("the shop opens on the mounts tab", shop.SelectedCategory?.Key == "mount" && shop.Offers.Count == 1 && shop.Offers[0].Offer.Id == 201);
+            check("the shop opens on the mounts tab", shop.SelectedCategory?.Key == "mount" && shop.Offers.Count == 2 && shop.Offers[0].Offer.Id == 201);
+            // An account-wide offer (a mount the realm shares): bought for the account, not the picked character.
+            check("an account-wide offer says so, and still needs the coins", Card(202) is { IsAccount: true, CanBuy: true, HasState: false } && !Card(201).IsAccount);
+            shop.AskToBuy(Card(202));
+            check("an account-wide offer is bought for the account", shop.IsConfirming
+                && shop.ConfirmText == "Buy Ashen Steed for 30 coins for your account?"
+                && shop.ConfirmDetail == "You have 45 coins; 15 will be left. A horse. Every character on your account gets it.");
+            shop.CancelBuy();
             ShopOfferView Any(uint id) => shop.Categories.Select(c => { shop.SelectedCategory = c; return shop.Offers.FirstOrDefault(o => o.Offer.Id == id); })
                 .First(o => o is not null)!;
             ShopOfferView Card(uint id) => Any(id);
@@ -156,7 +165,7 @@ internal static partial class Program
             check("a service waiting for this character is marked", Card(1) is { CanBuy: false, IsOwned: true, StateText: "Already waiting" });
             check("what another character couldn't use, this one can", Card(201).CanBuy);
             shop.SelectedCategory = shop.Categories.First(c => c.Key == "mount");
-            check("a category tab shows only its offers", shop.Offers.Count == 1 && shop.Offers[0].Offer.Id == 201);
+            check("a category tab shows only its offers", shop.Offers.Count == 2 && shop.Offers[0].Offer.Id == 201);
             check("the stage shows the tab's first offer", shop.SelectedOffer?.Offer.Id == 201 && shop.Offers[0].IsSelected);
 
             shop.AskToBuy(shop.Offers[0]);
