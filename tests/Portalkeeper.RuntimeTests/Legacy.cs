@@ -336,6 +336,45 @@ internal static partial class Program
                 legacy.SelectedCharacter?.Guid == 12 && legacy.StatusIsError && !legacy.HasUnsavedChanges);
         }
 
+        using (var legacy = Legacy(new FakeLegacyPortal()))
+        {
+            await legacy.LoadAsync();
+            var closes = 0;
+            legacy.CloseConfirmed += () => closes++;
+            check("legacy page: closing without changes needs no question", legacy.AskToClose() && !legacy.IsConfirmingDiscard);
+            legacy.Add(legacy.Trees[2].Perks[0]);
+            check("legacy page: closing with changes asks first",
+                !legacy.AskToClose() && legacy.IsConfirmingDiscard && legacy.DiscardText.Contains("close Portalkeeper") && closes == 0);
+            legacy.CancelDiscard();
+            check("legacy page: KEEP EDITING keeps the window and the draft", !legacy.IsConfirmingDiscard && legacy.HasUnsavedChanges && closes == 0);
+            legacy.AskToClose();
+            legacy.ConfirmDiscard();
+            check("legacy page: DISCARD drops the draft and closes", closes == 1 && !legacy.HasUnsavedChanges && !legacy.IsConfirmingDiscard);
+        }
+        using (var legacy = Legacy(new FakeLegacyPortal
+               {
+                   SaveJson = """{"character":{"guid":14,"name":"Ironhide","race":3,"class":1,"level":30,"online":true,"hardcore":true,"ranks":{"gatherer":1}},"message":"Saved."}""",
+               }))
+        {
+            await legacy.LoadAsync();
+            legacy.Add(legacy.Trees[2].Perks[0]);
+            await legacy.SaveAsync();
+            check("legacy page: a save answer without points keeps the listing's",
+                legacy is { SelectedCharacter.Guid: 14, Available: 4, Spent: 1, HasBuildProblem: false, HasUnsavedChanges: false });
+        }
+        using (var legacy = Legacy(new FakeLegacyPortal { ListingJson = """{"cap":16,"earned":{"total":1,"hardcore":1},"characters":[],"trees":[],"challenges":[]}""" }))
+        {
+            await legacy.LoadAsync();
+            check("legacy page: one point earned still names the hardcore part", legacy.EarnedText == "1 point earned on your account (1 on hardcore characters)");
+        }
+        {
+            var asked = 0;
+            using var legacy = new LegacyViewModel(Service(new FakeLegacyPortal()), session, _ => { asked++; return Task.FromResult<Avalonia.Media.Imaging.Bitmap?>(null); });
+            await legacy.LoadAsync();
+            var first = asked;
+            await legacy.LoadAsync();
+            check("legacy page: an icon that didn't load is asked for again at the next listing", first > 0 && asked == first * 2);
+        }
         using (var legacy = Legacy(new FakeLegacyPortal { Status = 404 }))
         {
             var gone = false;

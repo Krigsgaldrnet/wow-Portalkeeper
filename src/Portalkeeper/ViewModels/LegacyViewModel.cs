@@ -50,6 +50,7 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
     private LegacyCategoryView? _selectedCategory;
     private LegacyCharacterView? _pendingCharacter;
     private LauncherPage? _pendingPage;
+    private bool _pendingClose;
 
     /// <param name="loadIcon">Fetches a WoW icon by its file name (the armory's icon cache); null draws none.</param>
     public LegacyViewModel(LegacyService service, LauncherSession session, Func<string, Task<Bitmap?>>? loadIcon = null)
@@ -65,6 +66,8 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
     public event Action? Unavailable;
     /// <summary>The player chose to drop the draft and go to this page.</summary>
     public event Action<LauncherPage>? LeaveConfirmed;
+    /// <summary>The player chose to drop the draft and close Portalkeeper.</summary>
+    public event Action? CloseConfirmed;
 
     public ObservableCollection<LegacyCharacterView> Characters { get; } = [];
     public ObservableCollection<LegacyTreeView> Trees { get; } = [];
@@ -137,7 +140,7 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
     public string PointsText => $"{Spent} / {Available}";
     public string PointsCaption => $"spent / available · cap {_cap}";
     public bool IsOverPoints => Spent > Available;
-    public string EarnedText => _earnedTotal == 1 ? "1 point earned on your account" : $"{_earnedTotal} points earned on your account"
+    public string EarnedText => (_earnedTotal == 1 ? "1 point earned on your account" : $"{_earnedTotal} points earned on your account")
         + (_earnedHardcore > 0 ? $" ({_earnedHardcore} on hardcore characters)" : "");
     public bool IsHardcore => _selectedCharacter?.IsHardcore == true;
     public string HardcoreNote => IsHardcore
@@ -171,6 +174,7 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
         if (HasUnsavedChanges)
         {
             _pendingPage = null;
+            _pendingClose = false;
             _pendingCharacter = character;
             NotifyDiscard();
             return false;
@@ -184,21 +188,35 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
     {
         if (!HasUnsavedChanges) return true;
         _pendingCharacter = null;
+        _pendingClose = false;
         _pendingPage = page;
         NotifyDiscard();
         return false;
     }
 
-    public bool IsConfirmingDiscard => _pendingCharacter is not null || _pendingPage is not null;
+    /// <summary>The window is being closed: true when it can close now, false when it asks first.</summary>
+    public bool AskToClose()
+    {
+        if (!HasUnsavedChanges) return true;
+        _pendingCharacter = null;
+        _pendingPage = null;
+        _pendingClose = true;
+        NotifyDiscard();
+        return false;
+    }
+
+    public bool IsConfirmingDiscard => _pendingCharacter is not null || _pendingPage is not null || _pendingClose;
     public string DiscardTitle => "UNSAVED CHANGES";
     public string DiscardText => _selectedCharacter is null ? ""
         : _pendingCharacter is not null ? $"Discard {_selectedCharacter.Name}'s unsaved Legacy perks and switch to {_pendingCharacter.Name}?"
+        : _pendingClose ? $"Discard {_selectedCharacter.Name}'s unsaved Legacy perks and close Portalkeeper?"
         : $"Discard {_selectedCharacter.Name}'s unsaved Legacy perks and leave the page?";
 
     public void CancelDiscard()
     {
         _pendingCharacter = null;
         _pendingPage = null;
+        _pendingClose = false;
         NotifyDiscard();
     }
 
@@ -206,14 +224,18 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
     {
         var character = _pendingCharacter;
         var page = _pendingPage;
+        var close = _pendingClose;
         _pendingCharacter = null;
         _pendingPage = null;
+        _pendingClose = false;
         NotifyDiscard();
-        if (character is null && page is null) return;
+        if (character is null && page is null && !close) return;
         ResetDraft();
         if (character is not null && Characters.Contains(character)) Select(character);
         if (page is { } leave) LeaveConfirmed?.Invoke(leave);
+        if (close) CloseConfirmed?.Invoke();
     }
+
 
     private void Select(LegacyCharacterView character)
     {
@@ -379,6 +401,8 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
     private void ApplySaved(LegacyCharacter saved)
     {
         var index = Characters.ToList().FindIndex(c => c.Guid == saved.Guid);
+        // An answer that doesn't name the points (null) keeps what the listing said.
+        if (saved.PointsMissing && index >= 0) saved = saved with { Points = Characters[index].Character.Points, PointsMissing = false };
         var view = new LegacyCharacterView(saved);
         if (index >= 0) Characters[index] = view;
         else Characters.Add(view);
@@ -471,7 +495,13 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
         if (!_icons.TryGetValue(icon, out var load)) _icons[icon] = load = _loadIcon(icon);
         Bitmap? bitmap;
         try { bitmap = await load; }
-        catch (Exception) { return; }
+        catch (Exception) { bitmap = null; }
+        // A failed load (no connection, a half-written cache file) is tried again at the next listing.
+        if (bitmap is null)
+        {
+            if (_icons.TryGetValue(icon, out var cached) && ReferenceEquals(cached, load)) _icons.Remove(icon);
+            return;
+        }
         if (!_closed.IsCancellationRequested) set(bitmap);
     }
 
@@ -614,7 +644,7 @@ public sealed class LegacyPerkView(LegacyPerk perk, string treeName) : ViewModel
     public bool CanAdd => _canAdd;
     public bool CanRemove => _canRemove;
     public IBrush RankBrush => IsMaxed ? MaxedBrush : _canAdd ? AvailableBrush : _rank > 0 ? MaxedBrush : LockedBrush;
-    public IBrush FrameBrush => IsMaxed ? MaxedBrush : _canAdd ? AvailableBrush : _rank > 0 ? MaxedBrush : LockedBrush;
+    public IBrush FrameBrush => RankBrush;
 
     // The tooltip.
     public string RankLine => $"Rank {_rank}/{MaxRank}";

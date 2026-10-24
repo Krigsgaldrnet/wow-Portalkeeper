@@ -16,8 +16,9 @@ namespace Portalkeeper.Services;
 
 /// <param name="Points">What the character may spend: min(cap, points earned on the account), or on hardcore characters only for a hardcore one.</param>
 /// <param name="Ranks">Its saved build: perk id to rank, only ranks above 0.</param>
+/// <param name="PointsMissing">The answer didn't name the points (a save's answer then keeps the listing's).</param>
 public sealed record LegacyCharacter(uint Guid, string Name, int Race, int Class, int Gender, int Level, bool Online,
-    bool Hardcore, int Points, int Spent, IReadOnlyDictionary<string, int> Ranks);
+    bool Hardcore, int Points, int Spent, IReadOnlyDictionary<string, int> Ranks, bool PointsMissing = false);
 
 /// <param name="Row">0..3, top to bottom.</param>
 /// <param name="Column">0..2, left to right.</param>
@@ -254,7 +255,7 @@ public sealed partial class LegacyService
         var points = c.Points is int given ? Math.Clamp(given, 0, cap ?? int.MaxValue)
             : Math.Min(limit, Math.Max(0, (c.Hardcore ? hardcore : total) ?? 0));
         return new LegacyCharacter(c.Guid, (c.Name ?? "").Trim(), c.Race, c.Class, c.Gender, c.Level, c.Online, c.Hardcore,
-            points, ranks.Values.Sum(), ranks);
+            points, ranks.Values.Sum(), ranks, c.Points is null);
     }
 
     private static string Icon(string? icon) =>
