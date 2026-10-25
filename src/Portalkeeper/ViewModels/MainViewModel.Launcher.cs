@@ -147,6 +147,7 @@ public sealed partial class MainViewModel
         ForgetCrashReportOffer();
         ForgetShop();
         ForgetLegacy();
+        ForgetCharacters();
         NotifyLoginChanged();
         await ConfigureSharingAsync();
         if (session is not null) await _accountService.LogoutAsync(session);
@@ -183,6 +184,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(CrashReportsOffered));
         OnPropertyChanged(nameof(ShopAvailable));
         OnPropertyChanged(nameof(LegacyAvailable));
+        OnPropertyChanged(nameof(CharactersAvailable));
         NotifyInstallChanged();
         UpdateLaunchReadinessStatus();
     }
@@ -524,6 +526,7 @@ public sealed partial class MainViewModel
         NotifyRepairChanged();
         try
         {
+            await PrepareCharacterListLimitAsync();
             if (!await PrepareLongPatchNamesAsync())
             {
                 // Wow.exe can't be set up now: leave the choice to the next full sync (ENTER REALM still
@@ -593,6 +596,7 @@ public sealed partial class MainViewModel
         _ = RefreshCrashReportOfferAsync();
         _ = ProbeShopAsync();
         _ = ProbeLegacyAsync();
+        _ = ProbeCharactersAsync();
         await ClearCacheIfRealmAsksAsync();
         // The client has to load the realm's patch names before any patch is moved to one: with a
         // Wow.exe that can't be set up, the patches it has are the only ones it loads.
@@ -603,6 +607,9 @@ public sealed partial class MainViewModel
             await EnforceRealmClientAsync();
             ready = await PrepareLongPatchNamesAsync();
         }
+        // Not a reason to hold the patches back: a client that isn't set up yet only fails with more
+        // than 10 characters, and ENTER REALM asks again.
+        await PrepareCharacterListLimitAsync();
         if (ready)
         {
             await AdoptRenamedPatchesAsync();
@@ -820,6 +827,39 @@ public sealed partial class MainViewModel
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
         {
             _syncStatus = UserErrorService.Format(ex, "Couldn't set World of Warcraft up for the realm's patches; CHECK AGAIN retries");
+            UpdateLaunchReadinessStatus();
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The built-in realm lets an account have more than 10 characters, which a stock client answers
+    /// with an empty character list: CharacterListLimitService sets the client's Wow.exe up for more.
+    /// Every client of the built-in realm needs it, whatever the realm lists. Returns true when the
+    /// client is set up (or isn't the built-in realm's), false when it isn't yet; the same rules as
+    /// <see cref="PrepareLongPatchNamesAsync"/>: only a client known to be the realm's, never under a
+    /// running game or a client download, and sharing stopped first.
+    /// </summary>
+    private async Task<bool> PrepareCharacterListLimitAsync()
+    {
+        var realm = _realmInfo;
+        if (realm is null || !ClientValid || IsIsolatedRealm || !RealmBranding.IsBuiltIn(realm))
+            return true;
+        try
+        {
+            var root = EffectiveClientPath;
+            var executable = ClientService.FindWowExecutable(root, realm.Client.Executable)
+                ?? throw new FileNotFoundException("Wow.exe was not found in the client folder.");
+            if (await Task.Run(() => CharacterListLimitService.IsSetUp(executable))) return true;
+            if (IsGameRunning || _isInstallingClient) return false;
+            if (_clientCheck != ClientCheck.Ok && !ClientConformanceService.IsRealmInstall(root)) return false;
+            await StopAllSharingAsync();
+            await Task.Run(() => CharacterListLimitService.Ensure(root, executable));
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
+        {
+            _syncStatus = UserErrorService.Format(ex, "Couldn't set World of Warcraft up for more than 10 characters; CHECK AGAIN retries");
             UpdateLaunchReadinessStatus();
             return false;
         }

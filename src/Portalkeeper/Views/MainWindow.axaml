@@ -214,6 +214,9 @@
                     <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" IsVisible="{Binding LegacyAvailable}" />
                     <Button Classes="link nav" Classes.selected="{Binding IsLegacyPage}" Content="LEGACY" Tag="Legacy" Click="Nav_Click" IsVisible="{Binding LegacyAvailable}"
                             ToolTip.Tip="Spend the points your challenges earned on each character's perks" />
+                    <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" IsVisible="{Binding CharactersAvailable}" />
+                    <Button Classes="link nav" Classes.selected="{Binding IsCharactersPage}" Content="CHARACTERS" Tag="Characters" Click="Nav_Click" IsVisible="{Binding CharactersAvailable}"
+                            ToolTip.Tip="Put your characters in order for the character select screen" />
                     <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" IsVisible="{Binding ArmoryAvailable}" />
                     <Button Classes="link nav" Classes.selected="{Binding IsArmoryPage}" Content="ARMORY" Tag="Armory" Click="Nav_Click" IsVisible="{Binding ArmoryAvailable}" />
                     <TextBlock Text="|" Foreground="#55D8CCBA" VerticalAlignment="Center" IsVisible="{Binding CalendarAvailable}" />
@@ -364,6 +367,7 @@
 
             <views:ShopPage IsVisible="{Binding IsShopPage}" Margin="24,8,24,0" />
             <views:LegacyPage IsVisible="{Binding IsLegacyPage}" Margin="24,8,24,0" />
+            <views:CharactersPage IsVisible="{Binding IsCharactersPage}" Margin="24,8,24,0" />
             <views:ArmoryPage IsVisible="{Binding IsArmoryPage}" Margin="24,8,24,0" />
             <views:CalendarPage IsVisible="{Binding IsCalendarPage}" Margin="24,8,24,0" />
             <views:PatchNotesPage IsVisible="{Binding IsPatchNotesPage}" Margin="24,8,24,0" />

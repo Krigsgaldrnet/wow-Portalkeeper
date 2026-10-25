@@ -126,8 +126,11 @@ public sealed class RealmLaunchService
                     settings.Add((agreement, "1"));
             }
         }
+        var configPath = Path.Combine(fullClientDirectory, "WTF", "Config.wtf");
+        if (NeedsCharacterOrderSetting(realm, configPath))
+            settings.Add((CharacterOrderService.ConfigSetting, ""));
         if (settings.Count > 0)
-            WriteConfigSettings(Path.Combine(fullClientDirectory, "WTF", "Config.wtf"), settings, fullClientDirectory);
+            WriteConfigSettings(configPath, settings, fullClientDirectory);
         var process = LaunchWow(wowExecutable, fullClientDirectory, sourceClientDirectory, realm.Client.Executable);
 
         return new RealmLaunchResult
@@ -307,10 +310,61 @@ public sealed class RealmLaunchService
             WriteConfig(configPath, updated, encoding);
     }
 
+    /// <summary>
+    /// Evermore fork: the character select screen leaves a reordering in a CVar for the launcher
+    /// (CharacterOrderService). The game only keeps a CVar Config.wtf already names, so the built-in
+    /// realm's Config.wtf gets an empty one when it has none; a value already there is never touched.
+    /// </summary>
+    internal static bool NeedsCharacterOrderSetting(RealmInfo realm, string configPath) =>
+        RealmBranding.IsBuiltIn(realm) && realm.Client.RuntimeMode != ClientRuntimeMode.Isolated
+        && (!File.Exists(configPath) || ConfigSetting(ReadConfig(configPath).Text, CharacterOrderService.ConfigSetting) is null);
+
+    /// <summary>
+    /// The value a <c>SET name "value"</c> line in Config.wtf text gives the CVar (quotes taken off), or
+    /// null when no line names it. The last line wins, as in the game.
+    /// </summary>
+    public static string? ConfigSetting(string config, string name)
+    {
+        var pattern = new Regex(@"^[ \t]*SET[ \t]+" + Regex.Escape(name) + @"(?:[ \t]+(?:""([^""\r\n]*)""?|([^\s""]*)))?[ \t]*\r?$",
+            RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        string? value = null;
+        foreach (Match match in pattern.Matches(config))
+            value = match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value;
+        return value;
+    }
+
+    /// <summary>The CVar's value in the client's Config.wtf, or null when the file or the line isn't there.</summary>
+    public static string? ReadConfigSetting(string clientDirectory, string name)
+    {
+        var configPath = Path.Combine(Path.GetFullPath(clientDirectory), "WTF", "Config.wtf");
+        return File.Exists(configPath) ? ConfigSetting(ReadConfig(configPath).Text, name) : null;
+    }
+
+    /// <summary>
+    /// Empties the CVar in the client's Config.wtf (<c>SET name ""</c>), only while it still holds
+    /// <paramref name="expected"/>: a newer value the game wrote meanwhile stays. True when it's empty now.
+    /// No backup is kept: the value was the launcher's to take.
+    /// </summary>
+    public static bool ClearConfigSetting(string clientDirectory, string name, string expected)
+    {
+        var configPath = Path.Combine(Path.GetFullPath(clientDirectory), "WTF", "Config.wtf");
+        if (!File.Exists(configPath)) return false;
+        var (current, encoding) = ReadConfig(configPath);
+        var value = ConfigSetting(current, name);
+        if (value is null) return false;
+        if (value.Length == 0) return true;
+        if (!string.Equals(value, expected, StringComparison.Ordinal)) return false;
+        var pattern = new Regex(@"^([ \t]*)SET[ \t]+" + Regex.Escape(name) + @"(?:[ \t]+[^\r\n]*)?[ \t]*(?=\r?$)",
+            RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        var updated = pattern.Replace(current, match => match.Groups[1].Value + $"SET {name} \"\"");
+        if (!string.Equals(current, updated, StringComparison.Ordinal)) WriteConfig(configPath, updated, encoding);
+        return true;
+    }
+
     private static bool IsConfigValue(string value) =>
         !value.Any(char.IsControl) && !value.Contains('"') && !value.Contains('\\');
 
-    private static void WriteConfigSettings(string configPath, IReadOnlyList<(string Name, string Value)> settings, string clientDirectory)
+    internal static void WriteConfigSettings(string configPath, IReadOnlyList<(string Name, string Value)> settings, string clientDirectory)
     {
         var exists = File.Exists(configPath);
         var (current, encoding) = exists ? ReadConfig(configPath) : (string.Empty, new UTF8Encoding(false));

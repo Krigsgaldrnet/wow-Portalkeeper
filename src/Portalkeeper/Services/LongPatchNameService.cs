@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Portalkeeper.Models;
@@ -67,31 +66,7 @@ public static class LongPatchNameService
         var edited = Edited(original, name);
         if (edited is null) return false;
 
-        ManagedRuntimeWriteGuard.Check(root, executable);
-        var temp = executable + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            // Written fresh, not copied: a copy of a read-only Wow.exe couldn't be written to.
-            File.WriteAllBytes(temp, edited);
-            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temp, File.GetUnixFileMode(executable));
-
-            var backup = ManagedPath.Resolve(root, Path.Combine(".portalkeeper", "backups", "executable",
-                Convert.ToHexString(SHA256.HashData(original))[..16].ToLowerInvariant(), name));
-            if (!File.Exists(backup) || new FileInfo(backup).Length != original.Length)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
-                if (File.Exists(backup)) File.SetAttributes(backup, FileAttributes.Normal);
-                File.Copy(executable, backup, true);
-            }
-
-            // Windows won't replace a read-only file; elsewhere the folder decides.
-            var attributes = File.GetAttributes(executable);
-            var readOnly = OperatingSystem.IsWindows() && (attributes & FileAttributes.ReadOnly) != 0;
-            if (readOnly) File.SetAttributes(executable, attributes & ~FileAttributes.ReadOnly);
-            try { File.Move(temp, executable, true); }
-            finally { if (readOnly) File.SetAttributes(executable, File.GetAttributes(executable) | FileAttributes.ReadOnly); }
-        }
-        finally { if (File.Exists(temp)) File.Delete(temp); }
+        ClientExecutableEdit.Replace(root, executable, original, edited);
         return true;
     }
 
