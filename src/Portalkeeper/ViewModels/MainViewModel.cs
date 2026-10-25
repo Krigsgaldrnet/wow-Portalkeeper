@@ -37,7 +37,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         _isManagingComponents = true;
         OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
         try { await StopOptionalAddonUpdatesAsync(); await PrepareIsolatedRuntimeAsync(); await operation(); }
-        finally { _isManagingComponents = false; OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm)); UpdateLaunchReadinessStatus(); }
+        finally
+        {
+            _isManagingComponents = false; OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm)); UpdateLaunchReadinessStatus();
+            // A patch choice made while this ran (also when it failed).
+            _ = ApplyPatchChoicesAsync();
+        }
     }
     private RealmInfo? _realmInfo;
     private readonly RealmConfigurationStore _realmStore = new();
@@ -75,20 +80,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         Patches = _realmInfo?.Patches.Select(p => _patchService.Inspect(ComponentInspectionPath, p, _realmInfo)).ToArray() ?? Array.Empty<PatchInfo>();
         OnPropertyChanged(nameof(Patches));
         OnPropertyChanged(nameof(HasManagedPatches));
+        RefreshPatchChoices();
         OnPropertyChanged(nameof(PatchesReady));
         OnPropertyChanged(nameof(PatchStatus));
         OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
         NotifyInstallChanged();
         UpdateLaunchReadinessStatus();
     }
-    public Task ManagePatchAsync(string id, bool remove) => RunComponentOperationAsync(() => ManagePatchCoreAsync(id, remove));
-    private async Task ManagePatchCoreAsync(string id, bool remove)
+    public Task ManagePatchAsync(string id, bool remove) => ManagePatchAsync(id, remove, turnedOff: false);
+    // turnedOff: the player turned the patch off (REALM PATCHES); a copy the realm still serves isn't backed up.
+    private Task ManagePatchAsync(string id, bool remove, bool turnedOff) => RunComponentOperationAsync(() => ManagePatchCoreAsync(id, remove, turnedOff));
+    private async Task ManagePatchCoreAsync(string id, bool remove, bool turnedOff)
     {
         if (IsGameRunning || IsLaunching) throw new InvalidOperationException("Close World of Warcraft before managing patches.");
         var patch = _realmInfo?.Patches.SingleOrDefault(p => p.Id == id) ?? throw new InvalidOperationException("Patch is not in the active realm configuration.");
         try
         {
-            if (remove) _patchService.Remove(EffectiveClientPath, patch, _realmInfo);
+            var root = EffectiveClientPath;
+            var realm = _realmInfo;
+            if (remove) await Task.Run(() => _patchService.Remove(root, patch, realm, backupUnlessCurrent: turnedOff));
             else await _patchService.InstallAsync(EffectiveClientPath, patch, _realmInfo);
         }
         finally { RefreshPatches(); _ = RefreshSharingAsync(); }
@@ -625,6 +635,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             var effectiveClient = _clientService.ValidateClient(EffectiveClientPath, _realmInfo.Client);
             if (!effectiveClient.IsSupportedClient) throw new InvalidOperationException(effectiveClient.StatusMessage);
             RefreshPatches();
+            await RemoveTurnedOffPatchesAsync();
             if (!ClientValid || !PatchesReady) throw new InvalidOperationException(!ClientValid ? ClientStatus : "Required patches need attention.");
             var currentAddons = _addonService.InspectAddons(EffectiveClientPath, _addonManifest ??
                 new AddonManifest { Addons = _realmInfo.Addons.ToList() });
@@ -761,6 +772,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             await RefreshRealmHealthAsync();
             _ = RefreshHomeInfoOnTickAsync();
             _ = CheckRealmConfigurationOnTickAsync();
+            // A patch choice nothing has picked up yet (something else was busy when it was made).
+            _ = ApplyPatchChoicesAsync();
             // A shop that couldn't be asked at login (the world server restarting) is asked again
             // once the world is back, every few minutes; once the portal has answered, never.
             if (_realmHealthState is RealmHealthState.Online or RealmHealthState.WorldOnly)

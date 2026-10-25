@@ -146,10 +146,19 @@ internal static partial class Program
             && MainViewModel.DescribeIn(TimeSpan.FromSeconds(20)) == "in under a minute"
             && MainViewModel.DescribeIn(TimeSpan.FromMinutes(125)) == "in about 2 h 5 min"
             && MainViewModel.DescribeIn(TimeSpan.FromSeconds(-5)) == "now");
-        check("events read naturally",
-            MainViewModel.DescribeEvents([new(1, "Brewfest")]) == "Brewfest is on"
-            && MainViewModel.DescribeEvents([new(1, "Brewfest"), new(2, "Hallow's End")]) == "Brewfest and Hallow's End are on"
-            && MainViewModel.DescribeEvents([new(1, "A"), new(2, "B"), new(3, "C"), new(4, "D")]) == "A, B and 2 more are on");
+        check("each event gets its own row, named as players know it, with what it is",
+            MainViewModel.ShownEvents([new(12, "Hallow's End"), new(15, "Stranglethorn Fishing Extravaganza Fishing Pools")]) is [
+                { Name: "Hallow's End", About: { Length: > 0 } },
+                { Name: "Stranglethorn Fishing Extravaganza", About: { Length: > 0 } }]
+            && MainViewModel.DescribeEvent("Darkmoon Faire (Mulgore)") is { Name: "Darkmoon Faire", About: var faire } && faire!.Contains("Mulgore")
+            && MainViewModel.DescribeEvent("Call to Arms: Arathi Basin!") is { Name: "Call to Arms: Arathi Basin", About: var call } && call!.Contains("Arathi Basin")
+            && MainViewModel.DescribeEvent("Evermore Bonus Weekend") is { Name: "Evermore Bonus Weekend", About: null });
+        check("a holiday run as several game events shows once",
+            MainViewModel.ShownEvents([new(15, "Stranglethorn Fishing Extravaganza Fishing Pools"), new(90, "Stranglethorn Fishing Extravaganza Turn-ins")]).Count == 1);
+        check("past four events the box says how many more are on",
+            MainViewModel.ShownEvents([new(1, "A"), new(2, "B"), new(3, "C"), new(4, "D"), new(5, "E"), new(6, "F")]).Count == 4
+            && MainViewModel.DescribeMoreEvents([new(1, "A"), new(2, "B"), new(3, "C"), new(4, "D"), new(5, "E"), new(6, "F")]) == "+2 more events on"
+            && MainViewModel.DescribeMoreEvents([new(1, "A"), new(2, "B")]) == "");
         check("world bosses read as a count, not names",
             MainViewModel.DescribeBosses([new("Azuregos", "Azshara", true, null), new("Ysondre", "Duskwood", false, 1900000000)]) == "1 of 2 world bosses up"
             && MainViewModel.DescribeBosses([new("Azuregos", "Azshara", false, 1900000000)]) == "0 of 1 world boss up");
