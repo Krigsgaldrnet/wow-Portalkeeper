@@ -16,6 +16,9 @@ namespace Portalkeeper.ViewModels;
 /// <summary>One patch note on the home screen: a tag ("NEW", "FIX", "DRUID"), its headline and maybe a line under it.</summary>
 public sealed record WhatsNewItem(string Tag, IBrush TagBrush, string Headline, string? Detail);
 
+/// <summary>One world event on the home screen: its name and, for the holidays the launcher knows, what it is.</summary>
+public sealed record LiveEventItem(string Name, string? About);
+
 // Evermore fork: the home screen's right column under the realm status pill. "Live" is what the
 // portal says is going on now (players online, a pending restart, world events, world bosses up), asked
 // along with the realm status every 45 seconds. "What's new" is the patch notes merged since the
@@ -81,7 +84,9 @@ public sealed partial class MainViewModel
     public IBrush LiveRestartBrush => Brush.Parse(Live?.RestartAt is { } at && at - DateTimeOffset.UtcNow < TimeSpan.FromMinutes(5) ? "#E5604D" : "#F2B84B");
 
     public bool HasLiveEvents => Live?.Events is { Count: > 0 };
-    public string LiveEventsText => Live?.Events is { Count: > 0 } events ? DescribeEvents(events) : "";
+    public IReadOnlyList<LiveEventItem> LiveEvents => Live?.Events is { Count: > 0 } events ? ShownEvents(events) : [];
+    public string LiveEventsMoreText => Live?.Events is { Count: > 0 } events ? DescribeMoreEvents(events) : "";
+    public bool HasLiveEventsMore => LiveEventsMoreText.Length > 0;
 
     // World bosses only: the portal's count of every rare up isn't news to a player.
     public bool HasLiveBosses => Live?.Rares?.WorldBosses is { Count: > 0 };
@@ -109,17 +114,74 @@ public sealed partial class MainViewModel
     internal static string DescribeBosses(IReadOnlyList<RealmLiveBoss> bosses) =>
         $"{bosses.Count(b => b.Up)} of {bosses.Count} world boss{(bosses.Count == 1 ? "" : "es")} up";
 
-    /// <summary>"Brewfest is on", "Brewfest and Hallow's End are on", "Brewfest, Hallow's End and 2 more are on".</summary>
-    internal static string DescribeEvents(IReadOnlyList<RealmLiveEvent> events)
+    // Events listed one per row; past this many the box says how many more are on.
+    private const int LiveEventsShown = 4;
+
+    /// <summary>
+    /// The events as the home screen lists them: one row per holiday (the realm can run a holiday as
+    /// several game events, like the fishing pools apart from the contest), at most <see cref="LiveEventsShown"/>.
+    /// </summary>
+    internal static IReadOnlyList<LiveEventItem> ShownEvents(IReadOnlyList<RealmLiveEvent> events) =>
+        AllEvents(events).Take(LiveEventsShown).ToArray();
+
+    /// <summary>"+2 more events on", or "" when every event fits.</summary>
+    internal static string DescribeMoreEvents(IReadOnlyList<RealmLiveEvent> events)
     {
-        var names = events.Select(e => e.Name).ToArray();
-        return names.Length switch
-        {
-            1 => names[0] + " is on",
-            2 => $"{names[0]} and {names[1]} are on",
-            _ => $"{names[0]}, {names[1]} and {names.Length - 2} more are on"
-        };
+        var more = AllEvents(events).Count() - LiveEventsShown;
+        return more > 0 ? $"+{more} more event{(more == 1 ? "" : "s")} on" : "";
     }
+
+    private static IEnumerable<LiveEventItem> AllEvents(IReadOnlyList<RealmLiveEvent> events) =>
+        events.Select(e => DescribeEvent(e.Name)).DistinctBy(e => e.Name, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A game event's name as a player knows it, and a line on what it is: "Stranglethorn Fishing
+    /// Extravaganza Fishing Pools" is the Stranglethorn Fishing Extravaganza, "Darkmoon Faire (Mulgore)"
+    /// the faire in Mulgore. Events the launcher doesn't know (the realm's own) keep their name, with no line.
+    /// </summary>
+    internal static LiveEventItem DescribeEvent(string name)
+    {
+        name = name.Trim();
+        if (name.StartsWith("Call to Arms:", StringComparison.OrdinalIgnoreCase))
+        {
+            var battleground = name["Call to Arms:".Length..].Trim().TrimEnd('!');
+            return new LiveEventItem("Call to Arms: " + battleground, $"Extra honor for {battleground} battles while it lasts.");
+        }
+        if (name.StartsWith("Darkmoon Faire", StringComparison.OrdinalIgnoreCase))
+        {
+            var open = name.IndexOf('(');
+            var where = open > 0 && name.EndsWith(')') ? name[(open + 1)..^1].Trim() : null;
+            return new LiveEventItem("Darkmoon Faire", where is { Length: > 0 }
+                ? $"The faire is in {where}: games, prize tickets and Darkmoon cards."
+                : "Games, prize tickets and Darkmoon cards.");
+        }
+        foreach (var (holiday, about) in HolidayAbout)
+        {
+            if (name.StartsWith(holiday, StringComparison.OrdinalIgnoreCase))
+                return new LiveEventItem(holiday, about);
+        }
+        return new LiveEventItem(name, null);
+    }
+
+    // The holidays AzerothCore runs (game_event rows with a holiday), by the start of their name.
+    private static readonly (string Holiday, string About)[] HolidayAbout =
+    [
+        ("Stranglethorn Fishing Extravaganza", "Fishing contest: the first to bring Riggle Bassbait in Booty Bay 40 Speckled Tastyfish wins."),
+        ("Kalu'ak Fishing Derby", "Fishing contest in Dalaran: the first Blacktip Shark brought to Elder Clearwater wins."),
+        ("Hallow's End", "Trick or treat at the inns, put out the fires in the towns and face the Headless Horseman."),
+        ("Brewfest", "Ram races, festival brews and Coren Direbrew in Blackrock Depths."),
+        ("Harvest Festival", "Honor fallen heroes at the feasts outside Orgrimmar and Ironforge."),
+        ("Pirates' Day", "Booty Bay throws a party, and Dread Captain DeMeza turns guests into pirates."),
+        ("Day of the Dead", "Remember the dead with Catrina at the city graveyards."),
+        ("Pilgrim's Bounty", "Cook the feast and share the Bountiful Tables in the cities."),
+        ("Winter Veil", "Gifts under the tree, Greatfather Winter in the capitals and the Abominable Greench."),
+        ("Lunar Festival", "Honor the elders across the world and celebrate in Moonglade."),
+        ("Love is in the Air", "Gifts and perfume in the cities, and Apothecary Hummel in Shadowfang Keep."),
+        ("Noblegarden", "Hunt for colored eggs around the starting towns."),
+        ("Children's Week", "Take an orphan from the cities on outings for a pet."),
+        ("Midsummer Fire Festival", "Honor or desecrate the bonfires, and face Ahune in the Slave Pens."),
+        ("Fireworks Spectacular", "Fireworks over the capital cities.")
+    ];
 
     // ---------------------------------------------------------
     // What's new
@@ -219,7 +281,9 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(LiveRestartText));
         OnPropertyChanged(nameof(LiveRestartBrush));
         OnPropertyChanged(nameof(HasLiveEvents));
-        OnPropertyChanged(nameof(LiveEventsText));
+        OnPropertyChanged(nameof(LiveEvents));
+        OnPropertyChanged(nameof(LiveEventsMoreText));
+        OnPropertyChanged(nameof(HasLiveEventsMore));
         OnPropertyChanged(nameof(HasLiveBosses));
         OnPropertyChanged(nameof(LiveBossesText));
         OnPropertyChanged(nameof(LiveBossesBrush));
