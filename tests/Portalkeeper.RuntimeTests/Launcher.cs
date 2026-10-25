@@ -333,6 +333,9 @@ internal static partial class Program
             // The coin shop.
             await ShopChecks(Check);
 
+            // Legacy: points from challenges, perk trees per character.
+            await LegacyChecks(Check);
+
             // REALM PATCHES: which non-Required patches a player keeps.
             var requiredPatch = new PatchDefinition { Id = "Required", Requirement = ComponentRequirement.Required };
             var recommendedPatch = new PatchDefinition { Id = "RetailTrees", Requirement = ComponentRequirement.Recommended };
