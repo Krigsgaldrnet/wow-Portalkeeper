@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Portalkeeper.Models;
 using Portalkeeper.Services;
+using Portalkeeper.ViewModels;
 
 namespace Portalkeeper.RuntimeTests;
 
@@ -331,6 +332,34 @@ internal static partial class Program
 
             // The coin shop.
             await ShopChecks(Check);
+
+            // REALM PATCHES: which non-Required patches a player keeps.
+            var requiredPatch = new PatchDefinition { Id = "Required", Requirement = ComponentRequirement.Required };
+            var recommendedPatch = new PatchDefinition { Id = "RetailTrees", Requirement = ComponentRequirement.Recommended };
+            var optionalPatch = new PatchDefinition { Id = "Extra", Requirement = ComponentRequirement.Optional };
+            Check("untouched: Required and Recommended patches install, Optional ones don't",
+                MainViewModel.IsPatchWanted(requiredPatch, null, false) && MainViewModel.IsPatchWanted(recommendedPatch, null, false)
+                && !MainViewModel.IsPatchWanted(optionalPatch, null, false));
+            Check("untouched: an Optional patch already in the client is kept", MainViewModel.IsPatchWanted(optionalPatch, null, true));
+            var turned = new Dictionary<string, bool> { ["Required"] = false, ["RetailTrees"] = false, ["Extra"] = true };
+            Check("a Recommended patch can be turned off and an Optional one on",
+                !MainViewModel.IsPatchWanted(recommendedPatch, turned, true) && MainViewModel.IsPatchWanted(optionalPatch, turned, false));
+            Check("a Required patch can't be turned off", MainViewModel.IsPatchWanted(requiredPatch, turned, true));
+            Check("an Optional patch turned off goes even when it's in the client",
+                !MainViewModel.IsPatchWanted(optionalPatch, new Dictionary<string, bool> { ["Extra"] = false }, true));
+            Check("a choice for another patch changes nothing",
+                MainViewModel.IsPatchWanted(recommendedPatch, new Dictionary<string, bool> { ["Other"] = false }, false));
+            var choiceSettings = Path.Combine(root, "choice-settings", "settings.json");
+            var choiceStore = new SettingsService(choiceSettings);
+            var withChoice = new PortalkeeperSettings();
+            withChoice.PatchChoicesByRealm["REALM"] = new Dictionary<string, bool> { ["RetailTrees"] = false };
+            choiceStore.Save(withChoice);
+            Check("patch choices are saved with the settings",
+                choiceStore.Load().PatchChoicesByRealm.TryGetValue("REALM", out var savedChoices) && savedChoices["RetailTrees"] == false);
+            File.WriteAllText(choiceSettings, "{\"ClientPath\":\"\"}");
+            Check("settings from before patch choices load with none", choiceStore.Load().PatchChoicesByRealm.Count == 0);
+            File.WriteAllText(choiceSettings, "{\"PatchChoicesByRealm\":null}");
+            Check("null patch choices in the settings load as none", choiceStore.Load().PatchChoicesByRealm is { Count: 0 });
 
             // Crash reports and the home screen's live info and patch notes.
             await HomeAndCrashChecks(root, Check);

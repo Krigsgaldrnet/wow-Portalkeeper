@@ -44,6 +44,7 @@ public sealed class SettingsService
             var settings = JsonSerializer.Deserialize<PortalkeeperSettings>(json) ?? new PortalkeeperSettings();
             settings.ShowTransmogrifiedAppearancesByRealm ??= new();
             settings.ClientCacheVersions ??= new();
+            settings.PatchChoicesByRealm ??= new();
             return settings;
         }
         catch
@@ -75,6 +76,9 @@ public sealed class PortalkeeperSettings
     public string? LatestPortalkeeperReleaseTag { get; set; }
     public string ClientPath { get; set; } = string.Empty;
     public bool HidePortalkeeperWhileGameRuns { get; set; } = true;
+    // Realm patches the player turned on or off on the SETTINGS page, by realm (RealmIdentity) and
+    // patch key. Only Recommended patches (on until turned off) and Optional ones (off until turned on).
+    public Dictionary<string, Dictionary<string, bool>> PatchChoicesByRealm { get; set; } = new();
     // Sharing downloads with other players (TorrentService).
     public bool ShareDownloads { get; set; } = true;
     public int ShareUploadLimitKiB { get; set; } = 2048;

@@ -111,14 +111,15 @@ public sealed class PatchService
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }
-    public void Remove(string root, PatchDefinition patch, RealmInfo? realm = null)
+    // backupUnlessCurrent: a file that still matches the realm's patch isn't backed up (it can be downloaded again).
+    public void Remove(string root, PatchDefinition patch, RealmInfo? realm = null, bool backupUnlessCurrent = false)
     {
         var allocations = Allocations(root, patch, realm);
         using var operationLock = allocations is null ? null : WowPatchAllocationStore.AcquireLock(root);
         var destination = allocations is null ? FileDestination(root, patch) : Allocations(root, patch, realm)!.Find(patch.Id);
         if (destination is null || !File.Exists(destination)) return;
         ManagedRuntimeWriteGuard.Check(root, destination);
-        Backup(root, destination);
+        if (!(backupUnlessCurrent && patch.Sha256.Length > 0 && Matches(destination, patch.Sha256))) Backup(root, destination);
         File.Delete(destination);
         ClearClientCache(root);
         // Explicit removal retains the allocation so repair reuses the same slot.
