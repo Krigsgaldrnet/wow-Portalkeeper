@@ -154,6 +154,52 @@
                     </StackPanel>
                 </views:DragonFrame>
 
+                <!-- Realm patches players may leave out (Recommended: on until turned off; Optional: off until turned on) -->
+                <views:DragonFrame Ground="Marble" Padding="16" IsVisible="{Binding HasPatchChoices}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="REALM PATCHES"
+                                   FontSize="11"
+                                   FontWeight="Bold"
+                                   Foreground="#D5AA50" />
+                        <TextBlock Text="Every other realm patch is always installed. A patch turned off comes out of the game; turn it back on any time."
+                                   Foreground="#8E9AA5"
+                                   FontSize="11"
+                                   TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{Binding PatchChoices}" IsEnabled="{Binding CanChangePatchChoices}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Spacing="8" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PatchChoice">
+                                    <views:DragonFrame Kind="SmallInset" Ground="None" Padding="12,10">
+                                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+                                            <CheckBox Grid.RowSpan="2"
+                                                      IsChecked="{Binding IsOn, Mode=TwoWay}"
+                                                      VerticalAlignment="Center"
+                                                      Margin="0,0,12,0" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Name}"
+                                                       Foreground="#F2E7D0"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Grid.Row="1"
+                                                       Grid.Column="1"
+                                                       Text="{Binding Status}"
+                                                       Margin="0,4,0,0"
+                                                       Foreground="#8E9AA5"
+                                                       FontSize="11"
+                                                       TextWrapping="Wrap" />
+                                        </Grid>
+                                    </views:DragonFrame>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </views:DragonFrame>
+
                 <!-- Behavior -->
                 <views:DragonFrame Ground="Marble"
                         Padding="16">

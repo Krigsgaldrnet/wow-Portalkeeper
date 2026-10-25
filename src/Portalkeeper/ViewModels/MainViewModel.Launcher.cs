@@ -358,6 +358,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(HasInstallStatus));
         OnPropertyChanged(nameof(InstallPercent));
         OnPropertyChanged(nameof(IsSyncingRequired));
+        OnPropertyChanged(nameof(CanChangePatchChoices));
         OnPropertyChanged(nameof(CanEnterRealm));
         OnPropertyChanged(nameof(EnterRealmButtonText));
         NotifyRepairChanged();
@@ -371,13 +372,15 @@ public sealed partial class MainViewModel
     public bool IsSyncingRequired => _isInstallingRequired;
     private string _syncStatus = "";
 
-    // There's no patch list in this launcher, so Recommended patches install by themselves too:
-    // otherwise players would have no way to get them. Optional patches stay out.
-    private static bool InstallsAutomatically(PatchInfo patch) =>
-        patch.Definition.Requirement is ComponentRequirement.Required or ComponentRequirement.Recommended;
+    // Required patches always install. Recommended ones install unless the player turned them off on
+    // the SETTINGS page (REALM PATCHES), Optional ones only once the player turned them on.
+    private bool InstallsAutomatically(PatchInfo patch) => IsPatchWanted(patch);
+
+    // A patch the player turned off comes out of the client again (and goes back in when turned on).
+    private bool RemovesAutomatically(PatchInfo patch) => patch.IsInstalled && !IsPatchWanted(patch);
 
     private bool NeedsRequiredSync => IsLoggedIn && ClientValid && _clientCheck == ClientCheck.Ok && RealmConfigured && !IsIsolatedRealm && AddonsLoaded
-        && (Patches.Any(p => InstallsAutomatically(p) && !p.IsValid) || !AddonsReady);
+        && (Patches.Any(p => InstallsAutomatically(p) && !p.IsValid) || Patches.Any(RemovesAutomatically) || !AddonsReady);
 
     /// <summary>
     /// Installs or updates every Required and Recommended patch and every Required addon the realm
@@ -397,13 +400,22 @@ public sealed partial class MainViewModel
             || _isRefreshingConfiguration || IsLaunching || IsGameRunning)
             return;
         _isInstallingRequired = true;
+        _patchChoiceChanged = false;
         NotifyInstallChanged();
         try
         {
+            foreach (var patch in Patches.Where(RemovesAutomatically).Select(p => p.Definition).ToArray())
+            {
+                // Each choice is asked again right before its patch: the player may have changed it since.
+                if (IsPatchWanted(patch)) continue;
+                SetSyncStatus("Removing realm files: " + patch.Name + "...");
+                await ManagePatchAsync(patch.Id, remove: true, turnedOff: true);
+            }
             var patches = Patches.Where(p => InstallsAutomatically(p) && !p.IsValid)
                 .Select(p => p.Definition).ToArray();
             foreach (var patch in patches)
             {
+                if (!IsPatchWanted(patch)) continue;
                 SetSyncStatus("Updating realm files: " + patch.Name + "...");
                 await ManagePatchAsync(patch.Id, remove: false);
             }
@@ -426,6 +438,130 @@ public sealed partial class MainViewModel
             NotifyInstallChanged();
             UpdateLaunchReadinessStatus();
         }
+        if (_patchChoiceChanged)
+        {
+            // A patch was turned on or off while this run was busy: go again for it.
+            _patchChoiceChanged = false;
+            await SyncRequiredAsync();
+        }
+    }
+
+    // ---------------------------------------------------------
+    // REALM PATCHES: the Recommended and Optional patches players turn on or off
+    // ---------------------------------------------------------
+
+    // A choice no sync run has started on yet. Picked up by the next run, which is started straight
+    // away, after a component operation or another sync, and on the 45-second health tick.
+    private bool _patchChoiceChanged;
+
+    /// <summary>The realm's patches a player may leave out, with what this player picked.</summary>
+    public IReadOnlyList<PatchChoice> PatchChoices { get; private set; } = Array.Empty<PatchChoice>();
+    // Isolated realms only ever get their Required patches, so there's nothing to pick there.
+    public bool HasPatchChoices => PatchChoices.Count > 0 && !IsIsolatedRealm;
+    public bool CanChangePatchChoices => !IsGameRunning && !IsLaunching;
+
+    private IReadOnlyDictionary<string, bool>? CurrentPatchChoices =>
+        _realmInfo is { } realm && _savedSettings.PatchChoicesByRealm.TryGetValue(RealmIdentity.FromRealm(realm), out var choices)
+            ? choices : null;
+
+    private bool IsPatchWanted(PatchInfo patch) => IsPatchWanted(patch.Definition, CurrentPatchChoices, patch.IsInstalled);
+
+    private bool IsPatchWanted(PatchDefinition patch) => IsPatchWanted(patch, CurrentPatchChoices,
+        Patches.FirstOrDefault(p => p.Definition.Id == patch.Id)?.IsInstalled ?? false);
+
+    /// <summary>
+    /// Whether a realm patch belongs in the client. Without a choice, a Recommended patch does and an
+    /// Optional one only when it's already there (from before there were choices): it's kept, never
+    /// taken out behind the player's back.
+    /// </summary>
+    internal static bool IsPatchWanted(PatchDefinition patch, IReadOnlyDictionary<string, bool>? choices, bool installed)
+    {
+        if (patch.Requirement == ComponentRequirement.Required) return true;
+        if (choices is not null && choices.TryGetValue(patch.Id, out var on)) return on;
+        return patch.Requirement == ComponentRequirement.Recommended || installed;
+    }
+
+    private void RefreshPatchChoices()
+    {
+        PatchChoices = Patches.Where(p => p.Definition.Requirement != ComponentRequirement.Required)
+            .Select(p => new PatchChoice(this, p.Definition, IsPatchWanted(p), p.IsInstalled, p.IsValid)).ToArray();
+        OnPropertyChanged(nameof(PatchChoices));
+        OnPropertyChanged(nameof(HasPatchChoices));
+    }
+
+    internal void SetPatchChoice(PatchDefinition patch, bool on)
+    {
+        if (_realmInfo is not { } realm || patch.Requirement == ComponentRequirement.Required || IsGameRunning || IsLaunching
+            || IsPatchWanted(patch) == on)
+        {
+            // Not taken: put the checkbox back to what's in force.
+            RefreshPatchChoices();
+            return;
+        }
+        var identity = RealmIdentity.FromRealm(realm);
+        if (!_savedSettings.PatchChoicesByRealm.TryGetValue(identity, out var choices))
+            _savedSettings.PatchChoicesByRealm[identity] = choices = new Dictionary<string, bool>();
+        choices[patch.Id] = on;
+        try { SaveSettings(); } catch (Exception) { }
+        RefreshPatchChoices();
+        _patchChoiceChanged = true;
+        _ = ApplyPatchChoicesAsync();
+    }
+
+    /// <summary>
+    /// Puts a changed choice into effect: the same steps a full sync takes for patches (Wow.exe set up
+    /// for the realm's patch names first, the installed patches noted afterwards, optional addon updates
+    /// started again). Leaves the choice pending when anything else is busy; it's picked up later.
+    /// </summary>
+    private async Task ApplyPatchChoicesAsync()
+    {
+        if (!_patchChoiceChanged || _syncRuns > 0 || _isInstallingRequired || _isManagingComponents || _isInstallingClient
+            || _isRefreshingConfiguration || _isCleaningPatches || IsLaunching || IsGameRunning || !NeedsRequiredSync)
+            return;
+        _syncRuns++;
+        NotifyRepairChanged();
+        try
+        {
+            if (!await PrepareLongPatchNamesAsync())
+            {
+                // Wow.exe can't be set up now: leave the choice to the next full sync (ENTER REALM still
+                // takes out a turned-off patch) rather than stopping sharing again on every tick.
+                _patchChoiceChanged = false;
+                _ = RefreshSharingAsync();
+                return;
+            }
+            await SyncRequiredAsync();
+            RecordInstalledPatches();
+            StartOptionalAddonUpdates();
+        }
+        finally
+        {
+            _syncRuns--;
+            NotifyRepairChanged();
+        }
+    }
+
+    /// <summary>
+    /// ENTER REALM: a patch the player turned off is never loaded, even when the sync that takes it
+    /// out hasn't got to it yet. (A patch turned on that isn't in yet just waits for the next sync.)
+    /// </summary>
+    private async Task RemoveTurnedOffPatchesAsync()
+    {
+        if (_realmInfo is not { } realm) return;
+        var off = Patches.Where(RemovesAutomatically).Select(p => p.Definition).ToArray();
+        if (off.Length == 0) return;
+        var root = EffectiveClientPath;
+        foreach (var patch in off)
+        {
+            try { await Task.Run(() => _patchService.Remove(root, patch, realm, backupUnlessCurrent: true)); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                RefreshPatches();
+                throw new InvalidOperationException(patch.Name + " is turned off in Settings but couldn't be taken out of the game ("
+                    + ex.Message + "). Turn it back on, or check that the file isn't read-only or open elsewhere.", ex);
+            }
+        }
+        RefreshPatches();
     }
 
     private void SetSyncStatus(string status)
@@ -444,6 +580,8 @@ public sealed partial class MainViewModel
             _syncRuns--;
             NotifyRepairChanged();
         }
+        // A patch choice made while this ran, after its patch step.
+        await ApplyPatchChoicesAsync();
     }
 
     private async Task SyncRequiredAndShareCoreAsync()
@@ -638,7 +776,7 @@ public sealed partial class MainViewModel
         {
             var root = EffectiveClientPath;
             var identity = RealmIdentity.FromRealm(realm);
-            var wanted = realm.Patches.Where(p => p.InstallMode == PatchInstallMode.File && p.Sha256.Length > 0)
+            var wanted = realm.Patches.Where(p => p.InstallMode == PatchInstallMode.File && p.Sha256.Length > 0 && IsPatchWanted(p))
                 .Select(p => (ManagedPath.Resolve(root, Path.Combine(ManagedPath.Relative(p.InstallDirectory),
                     ManagedPath.Relative(p.FileName, true))), p.Sha256)).ToArray();
             if (wanted.All(w => File.Exists(w.Item1))) return;
