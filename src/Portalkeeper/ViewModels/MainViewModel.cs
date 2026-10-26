@@ -633,7 +633,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             if (!await PrepareLongPatchNamesAsync())
                 throw new InvalidOperationException(_syncStatus.Length > 0 ? _syncStatus : "World of Warcraft isn't set up for the realm's patches yet.");
             if (!await PrepareCharacterListLimitAsync())
-                throw new InvalidOperationException(_syncStatus.Length > 0 ? _syncStatus : "World of Warcraft isn't set up for more than 10 characters yet.");
+                throw new InvalidOperationException(_syncStatus.Length > 0 ? _syncStatus : "World of Warcraft isn't set up for the character select screen yet.");
             await ClearCacheIfRealmAsksAsync();
             await PrepareIsolatedRuntimeAsync();
             var effectiveClient = _clientService.ValidateClient(EffectiveClientPath, _realmInfo.Client);

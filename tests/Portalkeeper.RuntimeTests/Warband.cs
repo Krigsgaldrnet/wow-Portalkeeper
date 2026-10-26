@@ -109,9 +109,21 @@ internal static partial class Program
         var otherCall = (byte[])stock.Clone();
         otherCall[0xE311C + 1] ^= 0x10;
         check("warband: a different call is refused", Refused(otherCall));
-        var usedZdata = (byte[])stock.Clone();
-        usedZdata[0x72DC00 + 3] = 0x90;
-        check("warband: a .zdata that isn't empty is refused", Refused(usedZdata));
+        var usedPlace = (byte[])stock.Clone();
+        usedPlace[0x72DC00 + 3] = 0x90;
+        check("warband: a place in .zdata that isn't empty is refused", Refused(usedPlace));
+        var keptPlace = (byte[])stock.Clone();
+        keptPlace[0xE2732] ^= 0x01; // the bytes after GetCharacterInfo's hook, never changed but checked
+        check("warband: a changed byte where nothing is written is refused", Refused(keptPlace));
+        check("warband: a truncated file is refused", Refused(stock.AsSpan(0, 0x72DC10).ToArray()));
+
+        // The launcher's softer calls: a client it can't edit is left alone and still counts as done.
+        File.WriteAllBytes(foreign, partly);
+        check("warband: TryEnsure leaves a client it can't edit alone", !WarbandSelectService.TryEnsure(client, foreign)
+            && File.ReadAllBytes(foreign).AsSpan().SequenceEqual(partly) && WarbandSelectService.IsSetUpOrRefused(foreign));
+        File.WriteAllBytes(foreign, stock);
+        check("warband: TryEnsure edits a stock client", !WarbandSelectService.IsSetUpOrRefused(foreign)
+            && WarbandSelectService.TryEnsure(client, foreign) && WarbandSelectService.IsSetUp(foreign));
         check("warband: a PE with another image base is refused", Refused(WarbandStandInClient(imageBase: 0x10000000)));
         check("warband: a PE whose .zdata sits elsewhere in the file is refused", Refused(WarbandStandInClient(zdataRaw: 0x72D000)));
         check("warband: a file that isn't a PE is refused", Refused(Encoding.ASCII.GetBytes("not a client").Concat(new byte[0x72E000]).ToArray()));

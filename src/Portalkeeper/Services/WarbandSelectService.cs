@@ -79,6 +79,23 @@ public static class WarbandSelectService
         return true;
     }
 
+    /// <summary>
+    /// True when <paramref name="executable"/> has the edits or can't have them (not a client this knows):
+    /// the camp is only a look, and a client it can't edit keeps the stock screen and still launches.
+    /// </summary>
+    public static bool IsSetUpOrRefused(string executable)
+    {
+        try { return IsSetUp(executable); }
+        catch (InvalidDataException) { return true; }
+    }
+
+    /// <summary><see cref="Ensure"/>, except that a client it can't edit is left alone (false) rather than refused.</summary>
+    public static bool TryEnsure(string root, string executable)
+    {
+        try { return Ensure(root, executable); }
+        catch (InvalidDataException) { return false; }
+    }
+
     /// <summary>The file with the edits, or null when it has them already.</summary>
     internal static byte[]? Edited(byte[] original, string name)
     {

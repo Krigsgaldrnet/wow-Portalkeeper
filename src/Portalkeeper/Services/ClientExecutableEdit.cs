@@ -5,7 +5,8 @@ using System.Security.Cryptography;
 namespace Portalkeeper.Services;
 
 /// <summary>
-/// Puts an edited Wow.exe in place of the client's (LongPatchNameService, CharacterListLimitService).
+/// Puts an edited Wow.exe in place of the client's (LongPatchNameService, CharacterListLimitService,
+/// WarbandSelectService).
 /// The file it replaces is kept under .portalkeeper/backups/executable, keyed by its own SHA-256, so
 /// every version is kept once however often an edit is retried. A failure leaves the file as it was.
 /// </summary>

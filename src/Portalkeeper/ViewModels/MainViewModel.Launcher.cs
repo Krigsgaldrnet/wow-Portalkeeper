@@ -836,8 +836,9 @@ public sealed partial class MainViewModel
     /// The built-in realm lets an account have more than 10 characters, which a stock client answers
     /// with an empty character list: CharacterListLimitService sets the client's Wow.exe up for more.
     /// WarbandSelectService then lets the character select screen show its warband camp (several
-    /// characters and their pets, each character's era); its screen stays stock without it.
-    /// Every client of the built-in realm needs both, whatever the realm lists. Returns true when the
+    /// characters and their pets, each character's era); its screen stays stock without it, so a
+    /// Wow.exe it can't edit (another tool's edits) still launches. Every client of the built-in realm
+    /// needs the limit, whatever the realm lists. Returns true when the
     /// client is set up (or isn't the built-in realm's), false when it isn't yet; the same rules as
     /// <see cref="PrepareLongPatchNamesAsync"/>: only a client known to be the realm's, never under a
     /// running game or a client download, and sharing stopped first.
@@ -852,7 +853,7 @@ public sealed partial class MainViewModel
             var root = EffectiveClientPath;
             var executable = ClientService.FindWowExecutable(root, realm.Client.Executable)
                 ?? throw new FileNotFoundException("Wow.exe was not found in the client folder.");
-            if (await Task.Run(() => CharacterListLimitService.IsSetUp(executable) && WarbandSelectService.IsSetUp(executable)))
+            if (await Task.Run(() => CharacterListLimitService.IsSetUp(executable) && WarbandSelectService.IsSetUpOrRefused(executable)))
                 return true;
             if (IsGameRunning || _isInstallingClient) return false;
             if (_clientCheck != ClientCheck.Ok && !ClientConformanceService.IsRealmInstall(root)) return false;
@@ -860,7 +861,7 @@ public sealed partial class MainViewModel
             await Task.Run(() =>
             {
                 CharacterListLimitService.Ensure(root, executable);
-                WarbandSelectService.Ensure(root, executable);
+                WarbandSelectService.TryEnsure(root, executable);
             });
             return true;
         }
