@@ -61,6 +61,8 @@ internal static partial class Program
             LongPatchNameChecks(root, Check);
             // More than 10 characters per realm, and their order.
             CharacterListLimitChecks(root, Check);
+            // The warband camp's character select edits.
+            WarbandSelectChecks(root, Check);
             await CharacterOrderChecks(root, Check);
 
             // Saved login.
