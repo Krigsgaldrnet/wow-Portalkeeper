@@ -89,11 +89,20 @@ public static class WarbandSelectService
         catch (InvalidDataException) { return true; }
     }
 
-    /// <summary><see cref="Ensure"/>, except that a client it can't edit is left alone (false) rather than refused.</summary>
+    /// <summary>
+    /// <see cref="Ensure"/>, except that a client it can't edit is left alone (false) rather than refused.
+    /// A failure putting the file in place still throws.
+    /// </summary>
     public static bool TryEnsure(string root, string executable)
     {
-        try { return Ensure(root, executable); }
+        var original = File.ReadAllBytes(executable);
+        byte[]? edited;
+        try { edited = Edited(original, Path.GetFileName(executable)); }
         catch (InvalidDataException) { return false; }
+        if (edited is null) return false;
+
+        ClientExecutableEdit.Replace(root, executable, original, edited);
+        return true;
     }
 
     /// <summary>The file with the edits, or null when it has them already.</summary>
