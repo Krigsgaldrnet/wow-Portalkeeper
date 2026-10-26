@@ -14,9 +14,9 @@ namespace Portalkeeper.ViewModels;
 // Evermore fork: the character order (CharacterOrderService). The CHARACTERS page (MainViewModel.Pages.cs)
 // is shown once the portal has answered a list for this login, like LEGACY: a realm without it
 // answers 404 and the link stays hidden. The game's character select screen reorders too, but it
-// can't reach the realm: it leaves the order in Config.wtf, and the launcher sends it before the next
-// launch and after the game exits, then empties it; until the realm has it the launcher keeps its own
-// copy in its settings. Sending it never holds up a launch for long.
+// can't reach the realm: it leaves the order in Config.wtf's accountList, and the launcher sends it
+// before the next launch and after the game exits, then empties it; until the realm has it the
+// launcher keeps its own copy in its settings (the login handoff overwrites accountList). Sending it never holds up a launch for long.
 public sealed partial class MainViewModel
 {
     /// <summary>How long ENTER REALM waits for an order the game left to be sent; after that it goes next time.</summary>
@@ -113,12 +113,12 @@ public sealed partial class MainViewModel
 
     /// <summary>
     /// Sends the order the game's character select screen left for this login's account: the one in
-    /// Config.wtf, or else the launcher's own copy of one that wasn't sent yet (the game drops an
-    /// unchanged CVar from Config.wtf on exit). Once the realm has it, both are emptied; anything else
-    /// (no answer, a refusal, out of time) keeps it in the launcher's settings for the next try, a newer
-    /// one from Config.wtf replacing it. Before a launch it's given <paramref name="limit"/>; a login
-    /// that expired is only acted on after the game (<paramref name="afterGame"/>), never in the middle
-    /// of ENTER REALM.
+    /// Config.wtf's accountList, or else the launcher's own copy of one that wasn't sent yet (the login
+    /// handoff overwrites accountList). Once the realm has it, or it can never fit (stale, refused),
+    /// both are emptied; anything else (no answer, out of time) keeps it in the launcher's settings for
+    /// the next try, as guids once the realm's list was read, a newer one from Config.wtf replacing it.
+    /// Before a launch it's given <paramref name="limit"/>; a login that expired is only acted on after
+    /// the game (<paramref name="afterGame"/>), never in the middle of ENTER REALM.
     /// </summary>
     private async Task SendPendingCharacterOrderAsync(bool afterGame, TimeSpan? limit = null)
     {
@@ -133,23 +133,32 @@ public sealed partial class MainViewModel
             try { value = await Task.Run(() => RealmLaunchService.ReadConfigSetting(root, CharacterOrderService.ConfigSetting)); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { value = null; }
             var fromConfig = CharacterOrderService.ParsePending(value, session.AccountName);
-            var names = CharacterOrderService.PendingOrder(fromConfig, _savedSettings.PendingCharacterOrder, session.AccountName);
-            if (names is null) return;
+            var pending = CharacterOrderService.PendingOrder(fromConfig, _savedSettings.PendingCharacterOrder, session.AccountName);
+            if (pending is null) return;
 
             CharacterOrderResult? result = null;
             using (var cancel = limit is { } wait ? new CancellationTokenSource(wait) : new CancellationTokenSource())
             {
-                try { result = await _characterOrderService.SendPendingAsync(session, names, cancel.Token); }
+                try
+                {
+                    result = pending.Guids.Count > 0
+                        ? await _characterOrderService.SaveAsync(session, pending.Guids, cancel.Token) with { Order = pending.Guids }
+                        : await _characterOrderService.SendPendingAsync(session,
+                            new PendingCharacterPositions(pending.Count, pending.Positions), cancel.Token);
+                }
                 catch (OperationCanceledException) { }
             }
             if (!ReferenceEquals(session, _session)) return;
 
-            if (result?.Outcome != CharacterOrderOutcome.Saved)
+            if (result?.Outcome is not (CharacterOrderOutcome.Saved or CharacterOrderOutcome.Stale or CharacterOrderOutcome.Refused))
             {
-                KeepPendingCharacterOrder(session.AccountName, names);
+                KeepPendingCharacterOrder(session.AccountName, result?.Order is { Count: > 0 } guids
+                    ? new PendingCharacterOrder { Account = pending.Account, Guids = guids.ToList() }
+                    : pending);
                 if (result?.Outcome == CharacterOrderOutcome.LoggedOut && afterGame) _ = ShopLoginExpiredAsync(result.Message);
                 return;
             }
+            // Saved, or it never will be (the list changed, a character isn't the account's): done with it.
             KeepPendingCharacterOrder(session.AccountName, null);
             // The game keeps its own copy while it runs and writes it back on exit: the next exit sends it again.
             if (fromConfig is not null && !IsGameRunning)
@@ -157,24 +166,27 @@ public sealed partial class MainViewModel
                 try { await Task.Run(() => RealmLaunchService.ClearConfigSetting(root, CharacterOrderService.ConfigSetting, value!)); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             }
-            if (result.Characters is { } characters) _characters?.ApplyFromRealm(characters);
+            if (result.Outcome == CharacterOrderOutcome.Saved && result.Characters is { } characters) _characters?.ApplyFromRealm(characters);
         }
         finally { _pendingOrderLock.Release(); }
     }
 
     /// <summary>Keeps an unsent order for <paramref name="account"/> in the settings, or (null) forgets the one it has.</summary>
-    private void KeepPendingCharacterOrder(string account, IReadOnlyList<string>? names)
+    private void KeepPendingCharacterOrder(string account, PendingCharacterOrder? order)
     {
         var kept = _savedSettings.PendingCharacterOrder;
-        if (names is null)
+        var keptHere = kept is not null && string.Equals(kept.Account, account, StringComparison.OrdinalIgnoreCase);
+        if (order is null)
         {
-            if (kept is null || !string.Equals(kept.Account, account, StringComparison.OrdinalIgnoreCase)) return;
+            if (!keptHere) return;
             _savedSettings.PendingCharacterOrder = null;
         }
         else
         {
-            if (kept is not null && string.Equals(kept.Account, account, StringComparison.OrdinalIgnoreCase) && kept.Names?.SequenceEqual(names) == true) return;
-            _savedSettings.PendingCharacterOrder = new PendingCharacterOrder { Account = account, Names = names.ToList() };
+            if (keptHere && kept!.Count == order.Count && (kept.Guids ?? []).SequenceEqual(order.Guids)
+                && (kept.Positions ?? []).SequenceEqual(order.Positions))
+                return;
+            _savedSettings.PendingCharacterOrder = order;
         }
         try { SaveSettings(); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }

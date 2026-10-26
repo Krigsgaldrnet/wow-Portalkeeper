@@ -126,11 +126,8 @@ public sealed class RealmLaunchService
                     settings.Add((agreement, "1"));
             }
         }
-        var configPath = Path.Combine(fullClientDirectory, "WTF", "Config.wtf");
-        if (NeedsCharacterOrderSetting(realm, configPath))
-            settings.Add((CharacterOrderService.ConfigSetting, ""));
         if (settings.Count > 0)
-            WriteConfigSettings(configPath, settings, fullClientDirectory);
+            WriteConfigSettings(Path.Combine(fullClientDirectory, "WTF", "Config.wtf"), settings, fullClientDirectory);
         var process = LaunchWow(wowExecutable, fullClientDirectory, sourceClientDirectory, realm.Client.Executable);
 
         return new RealmLaunchResult
@@ -311,15 +308,6 @@ public sealed class RealmLaunchService
     }
 
     /// <summary>
-    /// Evermore fork: the character select screen leaves a reordering in a CVar for the launcher
-    /// (CharacterOrderService). The game only keeps a CVar Config.wtf already names, so the built-in
-    /// realm's Config.wtf gets an empty one when it has none; a value already there is never touched.
-    /// </summary>
-    internal static bool NeedsCharacterOrderSetting(RealmInfo realm, string configPath) =>
-        RealmBranding.IsBuiltIn(realm) && realm.Client.RuntimeMode != ClientRuntimeMode.Isolated
-        && (!File.Exists(configPath) || ConfigSetting(ReadConfig(configPath).Text, CharacterOrderService.ConfigSetting) is null);
-
-    /// <summary>
     /// The value a <c>SET name "value"</c> line in Config.wtf text gives the CVar (quotes taken off), or
     /// null when no line names it. The last line wins, as in the game.
     /// </summary>
@@ -364,7 +352,7 @@ public sealed class RealmLaunchService
     private static bool IsConfigValue(string value) =>
         !value.Any(char.IsControl) && !value.Contains('"') && !value.Contains('\\');
 
-    internal static void WriteConfigSettings(string configPath, IReadOnlyList<(string Name, string Value)> settings, string clientDirectory)
+    private static void WriteConfigSettings(string configPath, IReadOnlyList<(string Name, string Value)> settings, string clientDirectory)
     {
         var exists = File.Exists(configPath);
         var (current, encoding) = exists ? ReadConfig(configPath) : (string.Empty, new UTF8Encoding(false));

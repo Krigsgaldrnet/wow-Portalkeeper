@@ -104,13 +104,18 @@ public sealed class PortalkeeperSettings
     public string? LastSelfUpdateVersion { get; set; }
     public DateTimeOffset? LastSelfUpdateUtc { get; set; }
     // Evermore fork: an order the character select screen left that the realm hasn't saved yet. The
-    // game drops a CVar from Config.wtf on exit when it didn't change, so the launcher keeps its own copy.
+    // launcher's login handoff overwrites accountList, where the game leaves it, so it keeps its own copy.
     public PendingCharacterOrder? PendingCharacterOrder { get; set; }
 }
 
-/// <summary>An unsent character order (CharacterOrderService): the account it's for and its names, top first.</summary>
+/// <summary>
+/// An unsent character order (CharacterOrderService) for an account: the guids, top first, once the
+/// realm's list could be asked for; until then the game's positions in a list of Count characters.
+/// </summary>
 public sealed class PendingCharacterOrder
 {
     public string Account { get; set; } = string.Empty;
-    public List<string> Names { get; set; } = new();
+    public List<uint> Guids { get; set; } = new();
+    public int Count { get; set; }
+    public List<int> Positions { get; set; } = new();
 }

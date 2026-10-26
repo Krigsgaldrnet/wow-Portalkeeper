@@ -22,10 +22,10 @@ internal static partial class Program
           {"guid":0,"name":"Broken"}]}
         """;
 
-    /// <summary>A PE32 stand-in for Wow.exe: one .text section mapped like build 12340's, both guards at their places.</summary>
+    /// <summary>A PE32 stand-in for Wow.exe: one .text section mapped like build 12340's, the guard at its place.</summary>
     private static byte[] StandInClient(uint pointerToRawData = 0x400, uint imageBase = 0x400000, bool longNamePatterns = true)
     {
-        const int textSize = 0x368000;
+        const int textSize = 0x64000;
         var bytes = new byte[0x400 + textSize];
         new Random(70).NextBytes(bytes);
         // No 'p': the long-name patterns are only where they're put.
@@ -62,8 +62,7 @@ internal static partial class Program
         U32(section + 16, textSize);
         U32(section + 20, pointerToRawData);
         U32(section + 36, 0x60000020);
-        Convert.FromHexString("807DFF0AC745F800000000760B").CopyTo(bytes, 0x6404C);
-        Convert.FromHexString("6A006A006A016A05").CopyTo(bytes, 0x367707);
+        Convert.FromHexString("807DFF0AC745F800000000760B").CopyTo(bytes, CharacterListLimitService.GuardOffset);
         if (longNamePatterns)
             Encoding.ASCII.GetBytes("patch-%s-?.MPQ\0\0patch-?.MPQ\0patch-%s.MPQ\0").CopyTo(bytes, 0x2000);
         return bytes;
@@ -84,24 +83,12 @@ internal static partial class Program
         check("char limit: a stock client is changed", CharacterListLimitService.Ensure(client, exe) && CharacterListLimitService.IsSetUp(exe));
         var edited = File.ReadAllBytes(exe);
         var differences = Enumerable.Range(0, stock.Length).Where(i => stock[i] != edited[i]).ToArray();
-        check("char limit: exactly the jbe at 0x64057 becomes a jmp and the CVar push 1 at 0x36770C a push 0",
-            edited.Length == stock.Length && differences.SequenceEqual([0x64057, 0x36770C])
-            && stock[0x64057] == 0x76 && edited[0x64057] == 0xEB && stock[0x36770C] == 0x01 && edited[0x36770C] == 0x00);
+        check("char limit: exactly the jbe at 0x64057 becomes a jmp", edited.Length == stock.Length && differences.Length == 1
+            && differences[0] == 0x64057 && stock[0x64057] == 0x76 && edited[0x64057] == 0xEB);
         check("char limit: the file it replaced is kept", Backups().Length == 1 && File.ReadAllBytes(Backups()[0]).AsSpan().SequenceEqual(stock));
         check("char limit: a client that's set up is left alone", !CharacterListLimitService.Ensure(client, exe)
             && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited) && Backups().Length == 1
             && Directory.EnumerateFiles(client).Count() == 1);
-
-        // A client with only one of the two (the first release had only the limit) is finished.
-        foreach (var only in new[] { 0x64057, 0x36770C })
-        {
-            var half = (byte[])stock.Clone();
-            half[only] = edited[only];
-            File.WriteAllBytes(exe, half);
-            check($"char limit: a client with only the edit at 0x{only:X} gets the other one",
-                !CharacterListLimitService.IsSetUp(exe) && CharacterListLimitService.Ensure(client, exe)
-                && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited));
-        }
 
         // Both edits, in either order, give the same file: a client torrent can carry it.
         File.WriteAllBytes(exe, stock);
@@ -112,9 +99,9 @@ internal static partial class Program
         check("char limit: with the long-name edit, either order gives the same file", longFirst && limitFirst
             && File.ReadAllBytes(exe).AsSpan().SequenceEqual(both)
             && LongPatchNameService.IsSetUp(exe) && CharacterListLimitService.IsSetUp(exe)
-            && Enumerable.Range(0, stock.Length).Count(i => stock[i] != both[i]) == 4);
-        // stock, the two half-edited ones, stock + long names, stock + char edits: one backup each, keyed by what was replaced.
-        check("char limit: every version it replaced is kept once", Backups().Length == 5);
+            && Enumerable.Range(0, stock.Length).Count(i => stock[i] != both[i]) == 3);
+        // stock, stock + long names, stock + char limit: one backup each, keyed by what was replaced.
+        check("char limit: every version it replaced is kept once", Backups().Length == 3);
 
         // Anything else is refused and left as it was.
         var backupsSoFar = Backups().Length;
@@ -129,18 +116,12 @@ internal static partial class Program
             return ensured && asked && File.ReadAllBytes(foreign).AsSpan().SequenceEqual(bytes);
         }
         var wrongGuard = (byte[])stock.Clone();
-        wrongGuard[0x6404C + 3] = 0x0B; // cmp ..., 0x0b
+        wrongGuard[CharacterListLimitService.GuardOffset + 3] = 0x0B; // cmp ..., 0x0b
         check("char limit: a different guard is refused", Refused(wrongGuard));
         var otherJump = (byte[])stock.Clone();
-        otherJump[0x64057] = 0x75; // jne
+        otherJump[CharacterListLimitService.JumpOffset] = 0x75; // jne
         check("char limit: another jump is refused", Refused(otherJump));
-        var wrongCVarGuard = (byte[])stock.Clone();
-        wrongCVarGuard[0x367707 + 7] = 0x06; // push 6
-        check("char limit: a different CVar guard is refused", Refused(wrongCVarGuard));
-        var otherFlag = (byte[])stock.Clone();
-        otherFlag[0x36770C] = 0x02; // push 2
-        check("char limit: another CVar flag is refused", Refused(otherFlag));
-        check("char limit: a file that isn't a PE is refused", Refused(Encoding.ASCII.GetBytes("not a client").Concat(new byte[0x370000]).ToArray()));
+        check("char limit: a file that isn't a PE is refused", Refused(Encoding.ASCII.GetBytes("not a client").Concat(new byte[0x70000]).ToArray()));
         check("char limit: a PE with another image base is refused", Refused(StandInClient(imageBase: 0x10000000)));
         check("char limit: a PE whose .text sits elsewhere in the file is refused", Refused(StandInClient(pointerToRawData: 0x600)));
         check("char limit: a refused file leaves no backup and no temp file", Backups().Length == backupsSoFar
@@ -149,76 +130,83 @@ internal static partial class Program
 
     private static async Task CharacterOrderChecks(string root, Action<string, bool> check)
     {
-        // The CVar in Config.wtf.
+        // accountList in Config.wtf: the login handoff's "portalkeeper:" value and the game's "evermoreorder:" one.
         const string name = CharacterOrderService.ConfigSetting;
-        check("char order: the CVar is read without its quotes",
-            RealmLaunchService.ConfigSetting("SET realmName \"Azeroth\"\nSET evermoreCharOrder \"ALICE:Pawster,Zaph\"\n", name) == "ALICE:Pawster,Zaph");
-        check("char order: a missing CVar is null, an empty one empty",
+        check("char order: accountList is read without its quotes",
+            RealmLaunchService.ConfigSetting("SET realmName \"Azeroth\"\nSET accountList \"evermoreorder:ALICE:4:4,1\"\n", name) == "evermoreorder:ALICE:4:4,1");
+        check("char order: a missing accountList is null, an empty one empty",
             RealmLaunchService.ConfigSetting("SET realmName \"Azeroth\"\n", name) is null
-            && RealmLaunchService.ConfigSetting("SET evermoreCharOrder \"\"\r\nSET x \"1\"\r\n", name) == "");
+            && RealmLaunchService.ConfigSetting("SET accountList \"\"\r\nSET x \"1\"\r\n", name) == "");
         check("char order: the CVar name has no case, a longer name isn't it, the last line wins",
-            RealmLaunchService.ConfigSetting("set EVERMORECHARORDER \"a:B\"", name) == "a:B"
-            && RealmLaunchService.ConfigSetting("SET evermoreCharOrderOld \"a:B\"", name) is null
-            && RealmLaunchService.ConfigSetting("SET evermoreCharOrder \"a:B\"\nSET evermoreCharOrder \"a:C\"\n", name) == "a:C");
+            RealmLaunchService.ConfigSetting("set ACCOUNTLIST \"a\"", name) == "a"
+            && RealmLaunchService.ConfigSetting("SET accountListOld \"a\"", name) is null
+            && RealmLaunchService.ConfigSetting("SET accountList \"a\"\nSET accountList \"b\"\n", name) == "b");
 
         var client = Path.Combine(root, "charorder");
         var wtf = Path.Combine(client, "WTF");
         Directory.CreateDirectory(wtf);
         var config = Path.Combine(wtf, "Config.wtf");
         check("char order: no Config.wtf, no value", RealmLaunchService.ReadConfigSetting(client, name) is null
-            && !RealmLaunchService.ClearConfigSetting(client, name, "ALICE:Pawster"));
+            && !RealmLaunchService.ClearConfigSetting(client, name, "evermoreorder:ALICE:4:1"));
 
-        var builtIn = new RealmInfo { ConfigUrl = RealmBranding.ConfigUrl };
-        var other = new RealmInfo { ConfigUrl = "https://example.com/realm.conf" };
-        check("char order: the built-in realm registers the CVar, other realms don't",
-            RealmLaunchService.NeedsCharacterOrderSetting(builtIn, config) && !RealmLaunchService.NeedsCharacterOrderSetting(other, config));
-        File.WriteAllText(config, "SET realmName \"Azeroth\"\r\nSET accountName \"ALICE\"\r\n");
-        RealmLaunchService.WriteConfigSettings(config, [(name, "")], client);
-        var written = File.ReadAllText(config);
-        check("char order: a missing CVar is written empty and quoted, other lines kept",
-            written == "SET realmName \"Azeroth\"\r\nSET accountName \"ALICE\"\r\nSET evermoreCharOrder \"\"\r\n"
-            && RealmLaunchService.ReadConfigSetting(client, name) == ""
-            && !RealmLaunchService.NeedsCharacterOrderSetting(builtIn, config));
-
-        File.WriteAllText(config, "SET realmName \"Azeroth\"\r\nSET evermoreCharOrder \"ALICE:Zaph,Pawster\"\r\nSET gxWindow \"1\"\r\n");
-        check("char order: a value the game left isn't overwritten at launch", !RealmLaunchService.NeedsCharacterOrderSetting(builtIn, config));
-        check("char order: a newer value isn't cleared", !RealmLaunchService.ClearConfigSetting(client, name, "ALICE:Pawster")
-            && RealmLaunchService.ReadConfigSetting(client, name) == "ALICE:Zaph,Pawster");
+        const string order = "evermoreorder:ALICE:4:4,1";
+        File.WriteAllText(config, "SET realmName \"Azeroth\"\r\nSET accountList \"" + order + "\"\r\nSET gxWindow \"1\"\r\n");
+        RealmLaunchService.ForgetGamePassword(client);
+        check("char order: forgetting the game password leaves an order alone", RealmLaunchService.ReadConfigSetting(client, name) == order);
+        check("char order: only a launcher password is blanked",
+            RealmLaunchService.WithoutGamePassword("SET accountList \"portalkeeper:hunter2\"") == "SET accountList \"\""
+            && RealmLaunchService.WithoutGamePassword("SET accountList \"" + order + "\"") == "SET accountList \"" + order + "\"");
+        check("char order: a newer value isn't cleared", !RealmLaunchService.ClearConfigSetting(client, name, "evermoreorder:ALICE:4:1")
+            && RealmLaunchService.ReadConfigSetting(client, name) == order);
         check("char order: the value sent is cleared, quoted, and nothing else changes",
-            RealmLaunchService.ClearConfigSetting(client, name, "ALICE:Zaph,Pawster")
-            && File.ReadAllText(config) == "SET realmName \"Azeroth\"\r\nSET evermoreCharOrder \"\"\r\nSET gxWindow \"1\"\r\n"
-            && RealmLaunchService.ClearConfigSetting(client, name, "ALICE:Zaph,Pawster"));
+            RealmLaunchService.ClearConfigSetting(client, name, order)
+            && File.ReadAllText(config) == "SET realmName \"Azeroth\"\r\nSET accountList \"\"\r\nSET gxWindow \"1\"\r\n"
+            && RealmLaunchService.ClearConfigSetting(client, name, order));
 
-        // The value: "ACCOUNT:Name1,Name2,..."
-        check("char order: the account's order is read, names trimmed, the account without case",
-            CharacterOrderService.ParsePending("alice:Zaph, Pawster ,Ironhide", "ALICE") is { } names
-            && names.SequenceEqual(["Zaph", "Pawster", "Ironhide"]));
-        check("char order: another account's order is not this one's", CharacterOrderService.ParsePending("BOB:Zaph,Pawster", "ALICE") is null);
-        check("char order: empty, no account, no names: nothing pending",
-            CharacterOrderService.ParsePending("", "ALICE") is null && CharacterOrderService.ParsePending(null, "ALICE") is null
-            && CharacterOrderService.ParsePending("Zaph,Pawster", "ALICE") is null && CharacterOrderService.ParsePending(":Zaph", "ALICE") is null
-            && CharacterOrderService.ParsePending("ALICE:", "ALICE") is null && CharacterOrderService.ParsePending("ALICE: , ", "ALICE") is null
-            && CharacterOrderService.ParsePending("ALICE:Zaph", null) is null);
-        check("char order: a name twice counts once", CharacterOrderService.ParsePending("ALICE:Zaph,zaph,Pawster", "ALICE") is { } twice
-            && twice.SequenceEqual(["Zaph", "Pawster"]));
+        // The value: "evermoreorder:ACCOUNT:COUNT:p1,p2,..."
+        check("char order: the account's order is read, the account without case",
+            CharacterOrderService.ParsePending("evermoreorder:alice:4:4,1,3", "ALICE") is { Count: 4 } read && read.Positions.SequenceEqual([4, 1, 3]));
+        check("char order: a partial list is an order",
+            CharacterOrderService.ParsePending("evermoreorder:ALICE:4:2", "ALICE") is { Count: 4 } partial && partial.Positions.SequenceEqual([2]));
+        check("char order: another account's order, a login handoff, no prefix: nothing pending",
+            CharacterOrderService.ParsePending("evermoreorder:BOB:4:2,1", "ALICE") is null
+            && CharacterOrderService.ParsePending("portalkeeper:hunter2", "ALICE") is null
+            && CharacterOrderService.ParsePending("ALICE:4:2,1", "ALICE") is null
+            && CharacterOrderService.ParsePending("", "ALICE") is null && CharacterOrderService.ParsePending(null, "ALICE") is null
+            && CharacterOrderService.ParsePending("evermoreorder:ALICE:4:2,1", null) is null);
+        check("char order: positions that can't be are refused: 0, past the count, twice, not a number",
+            CharacterOrderService.ParsePending("evermoreorder:ALICE:4:0,1", "ALICE") is null
+            && CharacterOrderService.ParsePending("evermoreorder:ALICE:4:5", "ALICE") is null
+            && CharacterOrderService.ParsePending("evermoreorder:ALICE:4:2,2", "ALICE") is null
+            && CharacterOrderService.ParsePending("evermoreorder:ALICE:4:2,x", "ALICE") is null
+            && CharacterOrderService.ParsePending("evermoreorder:ALICE:4:-1", "ALICE") is null);
+        check("char order: no count, no positions, a part missing: nothing pending",
+            CharacterOrderService.ParsePending("evermoreorder:ALICE:0:", "ALICE") is null
+            && CharacterOrderService.ParsePending("evermoreorder:ALICE:4:", "ALICE") is null
+            && CharacterOrderService.ParsePending("evermoreorder:ALICE:x:1", "ALICE") is null
+            && CharacterOrderService.ParsePending("evermoreorder:ALICE:1", "ALICE") is null);
 
         // The launcher's own copy of an unsent order.
-        var kept = new PendingCharacterOrder { Account = "alice", Names = ["Ironhide", " Zaph", "", "ironhide"] };
+        var configOrder = new PendingCharacterPositions(4, [2]);
+        var keptGuids = new PendingCharacterOrder { Account = "alice", Guids = [16, 0, 12, 16] };
         check("char order: an order in Config.wtf wins over the launcher's copy",
-            CharacterOrderService.PendingOrder(["Pawster"], kept, "ALICE") is { } newer && newer.SequenceEqual(["Pawster"]));
-        check("char order: without one, the launcher's copy for this account is sent, cleaned up",
-            CharacterOrderService.PendingOrder(null, kept, "ALICE") is { } old && old.SequenceEqual(["Ironhide", "Zaph"]));
+            CharacterOrderService.PendingOrder(configOrder, keptGuids, "ALICE") is { Count: 4, Guids.Count: 0 } newer && newer.Positions.SequenceEqual([2]));
+        check("char order: without one, the launcher's guids for this account are sent, cleaned up",
+            CharacterOrderService.PendingOrder(null, keptGuids, "ALICE") is { } kept && kept.Guids.SequenceEqual([16u, 12u]));
+        check("char order: a copy kept before the list could be read keeps its positions",
+            CharacterOrderService.PendingOrder(null, new PendingCharacterOrder { Account = "ALICE", Count = 4, Positions = [3, 1] }, "alice")
+                is { Count: 4 } positions && positions.Positions.SequenceEqual([3, 1]));
         check("char order: another account's copy, an empty copy, or none: nothing",
-            CharacterOrderService.PendingOrder(null, kept, "BOB") is null
+            CharacterOrderService.PendingOrder(null, keptGuids, "BOB") is null
             && CharacterOrderService.PendingOrder(null, new PendingCharacterOrder { Account = "ALICE" }, "ALICE") is null
             && CharacterOrderService.PendingOrder(null, null, "ALICE") is null);
         var settingsPath = Path.Combine(root, "charorder-settings", "settings.json");
         var settingsService = new SettingsService(settingsPath);
         var settings = settingsService.Load();
-        settings.PendingCharacterOrder = new PendingCharacterOrder { Account = "ALICE", Names = ["Zaph", "Pawster"] };
+        settings.PendingCharacterOrder = new PendingCharacterOrder { Account = "ALICE", Guids = [16, 12] };
         settingsService.Save(settings);
         check("char order: the launcher's copy survives a restart",
-            settingsService.Load().PendingCharacterOrder is { Account: "ALICE" } reloaded && reloaded.Names.SequenceEqual(["Zaph", "Pawster"]));
+            settingsService.Load().PendingCharacterOrder is { Account: "ALICE" } reloaded && reloaded.Guids.SequenceEqual([16u, 12u]));
 
         // The portal.
         var api = new Uri("https://portal.test/api/launcher/");
@@ -234,8 +222,11 @@ internal static partial class Program
             && list[0].LastPlayed == DateTimeOffset.FromUnixTimeSeconds(1761400000)
             && list[1] is { Online: true, Order: 1 } && list[2].Order is null && list[3].LastPlayed is null);
 
-        check("char order: names map to guids in their order, unknown names left out, no case",
-            CharacterOrderService.GuidsFor(["zaph", "Nobody", "Pawster", "ZAPH"], list).SequenceEqual([16u, 12u]));
+        check("char order: positions map to the guids at those places in the realm's list",
+            CharacterOrderService.GuidsFor(new PendingCharacterPositions(4, [4, 1]), list)?.SequenceEqual([16u, 12u]) == true);
+        check("char order: a list of another length is stale",
+            CharacterOrderService.GuidsFor(new PendingCharacterPositions(5, [4, 1]), list) is null
+            && CharacterOrderService.GuidsFor(new PendingCharacterPositions(3, [1]), list) is null);
 
         portal.Status = 404;
         check("char order: a realm without character order answers null", await Service(portal).GetCharactersAsync(session) is null);
@@ -287,17 +278,29 @@ internal static partial class Program
 
         // An order the character select screen left.
         portal.Saves = 0;
-        var pending = await Service(portal).SendPendingAsync(session, ["Zaph", "Gone", "ironhide"]);
-        check("char order: an order from the game is sent by guid, unknown names left out",
-            pending.Outcome == CharacterOrderOutcome.Saved && portal.Saves == 1
+        var pending = await Service(portal).SendPendingAsync(session, new PendingCharacterPositions(4, [4, 2]));
+        check("char order: an order from the game is sent as the guids at its positions",
+            pending.Outcome == CharacterOrderOutcome.Saved && portal.Saves == 1 && pending.Order?.SequenceEqual([16u, 14u]) == true
             && portal.LastSave?.GetProperty("order").EnumerateArray().Select(e => e.GetUInt32()).SequenceEqual([16u, 14u]) == true);
-        var nothing = await Service(portal).SendPendingAsync(session, ["Gone"]);
-        check("char order: an order of names the realm doesn't list has nothing to send", nothing.Outcome == CharacterOrderOutcome.Saved && portal.Saves == 1);
+        var stale = await Service(portal).SendPendingAsync(session, new PendingCharacterPositions(5, [5, 1]));
+        check("char order: an order made from a list of another length is stale and not sent",
+            stale is { Outcome: CharacterOrderOutcome.Stale, Order: null } && portal.Saves == 1);
+        portal.SaveStatus = 503;
+        portal.SaveJson = """{"error":"Character ordering isn't available right now."}""";
+        var unsent = await Service(portal).SendPendingAsync(session, new PendingCharacterPositions(4, [3]));
+        check("char order: an order the realm didn't take names its guids, to keep",
+            unsent.Outcome == CharacterOrderOutcome.NotTried && unsent.Order?.SequenceEqual([15u]) == true);
+        portal.SaveStatus = 200;
+        portal.SaveJson = CharacterListJson;
+        portal.Status = 503;
+        check("char order: no list, no guids yet", await Service(portal).SendPendingAsync(session, new PendingCharacterPositions(4, [3]))
+            is { Outcome: CharacterOrderOutcome.NotTried, Order: null });
         portal.Status = 404;
-        check("char order: a realm without character order leaves it", (await Service(portal).SendPendingAsync(session, ["Zaph"])).Outcome == CharacterOrderOutcome.Unavailable);
+        check("char order: a realm without character order leaves it",
+            (await Service(portal).SendPendingAsync(session, new PendingCharacterPositions(4, [1]))).Outcome == CharacterOrderOutcome.Unavailable);
         portal.Status = 200;
         check("char order: an expired login is a logout",
-            (await Service(portal).SendPendingAsync(session with { Token = "old" }, ["Zaph"])).Outcome == CharacterOrderOutcome.LoggedOut);
+            (await Service(portal).SendPendingAsync(session with { Token = "old" }, new PendingCharacterPositions(4, [1]))).Outcome == CharacterOrderOutcome.LoggedOut);
 
         // The page.
         portal = new FakeCharacterPortal();

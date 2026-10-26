@@ -32,24 +32,40 @@ public enum CharacterOrderOutcome
     Unavailable,
     /// <summary>No answer (502, a lost connection): it may or may not have been saved.</summary>
     Unknown,
+    /// <summary>An order from the game that doesn't fit the realm's list any more (another count of characters): dropped.</summary>
+    Stale,
 }
 
+/// <summary>
+/// An order the character select screen left: <paramref name="Positions"/> are 1-based places in the
+/// realm's list of <paramref name="Count"/> characters, top first; characters it leaves out go after them.
+/// </summary>
+public sealed record PendingCharacterPositions(int Count, IReadOnlyList<int> Positions);
+
 /// <param name="Code">The portal's reason for a refusal (409: not_yours, duplicate), or null.</param>
+/// <param name="Order">The guids an order from the game came to, once they're known (to keep for another try).</param>
 public sealed record CharacterOrderResult(CharacterOrderOutcome Outcome, string Message,
-    IReadOnlyList<OrderedCharacter>? Characters = null, string? Code = null);
+    IReadOnlyList<OrderedCharacter>? Characters = null, string? Code = null, IReadOnlyList<uint>? Order = null);
 
 /// <summary>
 /// Evermore fork: the order of the account's characters on the realm's character select screen (the
 /// portal's api/launcher/characters.php, stored in characters.order). The list comes in display order;
 /// a save sends the account's characters by guid in the order wanted, and characters it leaves out
 /// go after them. The game's own character select screen can reorder too: it can't send that to the
-/// realm, so it leaves the order in Config.wtf (<see cref="ConfigSetting"/>) for the launcher to send.
+/// realm, so it leaves the order in Config.wtf's accountList (<see cref="OrderPrefix"/>) for the
+/// launcher to send.
 /// </summary>
 public sealed class CharacterOrderService
 {
     public const string Endpoint = "characters.php";
-    /// <summary>The Config.wtf CVar the character select screen leaves an order in: "ACCOUNT:Name1,Name2,...".</summary>
-    public const string ConfigSetting = "evermoreCharOrder";
+    /// <summary>
+    /// The Config.wtf CVar the character select screen leaves an order in. It's one the glue screens
+    /// can write that the client saves on exit; the launcher's login handoff uses it too (a
+    /// "portalkeeper:" value), and the realm's login screen neither shows nor clears an order.
+    /// </summary>
+    public const string ConfigSetting = "accountList";
+    /// <summary>An order in accountList: "evermoreorder:ACCOUNT:COUNT:p1,p2,...".</summary>
+    public const string OrderPrefix = "evermoreorder:";
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
     private readonly HttpClient _http;
@@ -149,11 +165,12 @@ public sealed class CharacterOrderService
     }
 
     /// <summary>
-    /// Sends an order left by the character select screen: <paramref name="names"/> mapped to the
-    /// account's characters (names the realm doesn't list are left out). Saved when there was nothing
-    /// left to send, so the order can be cleared; Unavailable on a realm without character order.
+    /// Sends an order left by the character select screen: <paramref name="order"/>'s positions mapped
+    /// to the guids in the realm's list (the same list, in the same order, as the game's). Stale when
+    /// the list doesn't fit it any more; Unavailable on a realm without character order. Once the
+    /// guids are known the result names them (<see cref="CharacterOrderResult.Order"/>).
     /// </summary>
-    public async Task<CharacterOrderResult> SendPendingAsync(LauncherSession session, IReadOnlyList<string> names,
+    public async Task<CharacterOrderResult> SendPendingAsync(LauncherSession session, PendingCharacterPositions order,
         CancellationToken cancellationToken = default)
     {
         IReadOnlyList<OrderedCharacter>? characters;
@@ -168,51 +185,66 @@ public sealed class CharacterOrderService
             return new CharacterOrderResult(CharacterOrderOutcome.NotTried, UserErrorService.Format(ex, "Couldn't ask for the character list"));
         }
         if (characters is null) return new CharacterOrderResult(CharacterOrderOutcome.Unavailable, "This realm doesn't keep a character order.");
-        var guids = GuidsFor(names, characters);
-        if (guids.Count == 0) return new CharacterOrderResult(CharacterOrderOutcome.Saved, "Nothing to reorder.", characters);
-        return await SaveAsync(session, guids, cancellationToken);
+        var guids = GuidsFor(order, characters);
+        if (guids is null)
+            return new CharacterOrderResult(CharacterOrderOutcome.Stale,
+                "The order from the game doesn't fit your characters any more (one was made or deleted since).", characters);
+        return await SaveAsync(session, guids, cancellationToken) with { Order = guids };
     }
 
     /// <summary>
-    /// The names in an order the character select screen left for <paramref name="account"/>
-    /// ("ACCOUNT:Name1,Name2,..."; the account is compared without case). Null when there's nothing
-    /// for this account: empty, another account's, or not an order at all.
+    /// The order in an accountList value the character select screen left for <paramref name="account"/>
+    /// ("evermoreorder:ACCOUNT:COUNT:p1,p2,..."; the account is compared without case). Null when
+    /// there's nothing for this account: empty, a login handoff, another account's, no positions, or
+    /// positions that can't be (twice, or outside 1..COUNT).
     /// </summary>
-    public static IReadOnlyList<string>? ParsePending(string? value, string? account)
+    public static PendingCharacterPositions? ParsePending(string? value, string? account)
     {
-        if (string.IsNullOrWhiteSpace(value) || string.IsNullOrWhiteSpace(account)) return null;
-        var colon = value.IndexOf(':');
-        if (colon <= 0 || !string.Equals(value[..colon].Trim(), account.Trim(), StringComparison.OrdinalIgnoreCase)) return null;
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var names = value[(colon + 1)..].Split(',').Select(n => n.Trim()).Where(n => n.Length > 0 && seen.Add(n)).ToArray();
-        return names.Length == 0 ? null : names;
-    }
-
-    /// <summary>
-    /// The order to send for <paramref name="account"/>: the one Config.wtf holds (<paramref name="fromConfig"/>,
-    /// from <see cref="ParsePending"/>), being newer, else the launcher's unsent copy when it's this
-    /// account's. Null when there's neither.
-    /// </summary>
-    public static IReadOnlyList<string>? PendingOrder(IReadOnlyList<string>? fromConfig, PendingCharacterOrder? kept, string? account)
-    {
-        if (fromConfig is not null) return fromConfig;
-        if (kept is null || string.IsNullOrWhiteSpace(account) || !string.Equals(kept.Account.Trim(), account.Trim(), StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(value) || string.IsNullOrWhiteSpace(account) || !value.StartsWith(OrderPrefix, StringComparison.Ordinal)) return null;
+        var parts = value[OrderPrefix.Length..].Split(':');
+        if (parts.Length != 3 || !string.Equals(parts[0].Trim(), account.Trim(), StringComparison.OrdinalIgnoreCase)) return null;
+        if (!int.TryParse(parts[1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var count)
+            || count < 1 || count > 255)
             return null;
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var names = (kept.Names ?? []).Select(n => (n ?? "").Trim()).Where(n => n.Length > 0 && seen.Add(n)).ToArray();
-        return names.Length == 0 ? null : names;
+        var positions = new List<int>();
+        foreach (var text in parts[2].Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var position)
+                || position < 1 || position > count || positions.Contains(position))
+                return null;
+            positions.Add(position);
+        }
+        return positions.Count == 0 ? null : new PendingCharacterPositions(count, positions);
     }
 
-    /// <summary>The guids of the characters named, in that order. Names are unique on a realm and compared without case.</summary>
-    public static IReadOnlyList<uint> GuidsFor(IReadOnlyList<string> names, IReadOnlyList<OrderedCharacter> characters)
+    /// <summary>
+    /// The guids at <paramref name="order"/>'s positions in the realm's list, in that order. Null when
+    /// the list isn't the one the order was made from (another length) or a position doesn't fit.
+    /// </summary>
+    public static IReadOnlyList<uint>? GuidsFor(PendingCharacterPositions order, IReadOnlyList<OrderedCharacter> characters)
     {
-        var byName = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
-        foreach (var character in characters)
-            if (character.Name.Length > 0) byName.TryAdd(character.Name, character.Guid);
-        var guids = new List<uint>();
-        foreach (var name in names)
-            if (byName.TryGetValue(name.Trim(), out var guid) && !guids.Contains(guid)) guids.Add(guid);
-        return guids;
+        if (characters.Count != order.Count || order.Positions.Count == 0) return null;
+        if (order.Positions.Any(p => p < 1 || p > characters.Count) || order.Positions.Distinct().Count() != order.Positions.Count) return null;
+        return order.Positions.Select(p => characters[p - 1].Guid).ToArray();
+    }
+
+    /// <summary>
+    /// What to send for <paramref name="account"/>: an order in Config.wtf (<paramref name="fromConfig"/>),
+    /// being newer, wins over the launcher's unsent copy (<paramref name="kept"/>), which only counts
+    /// when it's this account's. Null when there's neither.
+    /// </summary>
+    public static PendingCharacterOrder? PendingOrder(PendingCharacterPositions? fromConfig, PendingCharacterOrder? kept, string? account)
+    {
+        if (string.IsNullOrWhiteSpace(account)) return null;
+        if (fromConfig is not null)
+            return new PendingCharacterOrder { Account = account.Trim(), Count = fromConfig.Count, Positions = fromConfig.Positions.ToList() };
+        if (kept is null || !string.Equals((kept.Account ?? "").Trim(), account.Trim(), StringComparison.OrdinalIgnoreCase)) return null;
+        var guids = (kept.Guids ?? []).Where(g => g > 0).Distinct().ToList();
+        if (guids.Count > 0) return new PendingCharacterOrder { Account = kept.Account!.Trim(), Guids = guids };
+        var positions = kept.Positions ?? [];
+        return kept.Count > 0 && positions.Count > 0
+            ? new PendingCharacterOrder { Account = kept.Account!.Trim(), Count = kept.Count, Positions = positions.ToList() }
+            : null;
     }
 
     /// <summary>The portal's message for a refusal, or one for its code when it sent none.</summary>
