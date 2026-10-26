@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -23,8 +24,9 @@ namespace Portalkeeper.Services;
 /// guids are sent, which is harmless to repeat, until the realm saves them (or answers that a
 /// character isn't the account's). A value in accountList equal to the kept one is that same order.
 ///
-/// One sync at a time. A page save (<see cref="ForgetAsync"/>) wins over a sync in flight: the sync
-/// changes nothing after it.
+/// One sync at a time, and the page's SAVE (<see cref="SavePageOrderAsync"/>) takes the same turn: it
+/// waits for a send already on its way, so the realm gets the page's order last, and the sync changes
+/// nothing after it. A waiting order the realm refuses outright (400, 409) is dropped, not sent forever.
 /// </summary>
 public sealed class CharacterOrderSync
 {
@@ -126,26 +128,34 @@ public sealed class CharacterOrderSync
 
         var result = await _service.SaveAsync(session, pending.Guids, cancellationToken);
         if (generation != _generation) return null;
-        if (result.Outcome == CharacterOrderOutcome.Saved
-            || result is { Outcome: CharacterOrderOutcome.Refused, Code: "not_yours" })
+        if (result.Outcome == CharacterOrderOutcome.Refused || result.Code == CharacterOrderService.BadRequestCode)
+            Trace.WriteLine($"Portalkeeper: the realm refused the character order from the game for {account} ({result.Code ?? "no code"}: {result.Message}); dropped.");
+        if (result.Outcome is CharacterOrderOutcome.Saved or CharacterOrderOutcome.Refused || result.Code == CharacterOrderService.BadRequestCode)
             Drop(account, pending);
         return result;
     }
 
     /// <summary>
-    /// The page saved an order for <paramref name="account"/>: what the game left is older. Drops the
-    /// waiting order and, while <paramref name="mayWriteConfig"/> says so, the account's value in
-    /// accountList (never a login handoff or another account's). A sync in flight changes nothing after this.
+    /// The page's SAVE of <paramref name="guids"/>. It takes the sync's turn, so a send of the game's
+    /// order already on its way finishes first and the realm ends with the page's; a sync waiting for
+    /// its turn, or in flight, changes nothing after it. Once saved, the account's waiting order and its
+    /// value in accountList (never a login handoff or another account's, and only while
+    /// <paramref name="mayWriteConfig"/> says so) are dropped: they're older.
     /// </summary>
-    public async Task ForgetAsync(string account, string clientDirectory, Func<bool> mayWriteConfig)
+    public async Task<CharacterOrderResult> SavePageOrderAsync(LauncherSession session, IReadOnlyList<uint> guids, string clientDirectory,
+        Func<bool> mayWriteConfig, CancellationToken cancellationToken = default)
     {
         Interlocked.Increment(ref _generation);
-        await _lock.WaitAsync();
+        await _lock.WaitAsync(cancellationToken);
         try
         {
-            if (Orders.Remove(Key(account))) Save();
+            var result = await _service.SaveAsync(session, guids, cancellationToken);
+            if (result.Outcome != CharacterOrderOutcome.Saved) return result;
+            var account = Key(session.AccountName);
+            if (Orders.Remove(account)) Save();
             var value = await ReadAsync(clientDirectory);
-            if (CharacterOrderService.ParsePending(value, account) is not null) await ClearAsync(clientDirectory, value, mayWriteConfig);
+            if (CharacterOrderService.ParsePending(value, session.AccountName) is not null) await ClearAsync(clientDirectory, value, mayWriteConfig);
+            return result;
         }
         finally { _lock.Release(); }
     }

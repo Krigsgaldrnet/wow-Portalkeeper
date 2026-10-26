@@ -67,6 +67,8 @@ public sealed class CharacterOrderService
     /// "portalkeeper:" value), and the realm's login screen neither shows nor clears an order.
     /// </summary>
     public const string ConfigSetting = "accountList";
+    /// <summary>The code of a 400 (a malformed order): sending it again can't help.</summary>
+    public const string BadRequestCode = "bad_request";
     /// <summary>An order in accountList: "evermoreorder:ACCOUNT:COUNT:HASH:p1,p2,...".</summary>
     public const string OrderPrefix = "evermoreorder:";
 
@@ -157,7 +159,7 @@ public sealed class CharacterOrderService
                 HttpStatusCode.ServiceUnavailable => new CharacterOrderResult(CharacterOrderOutcome.NotTried,
                     Message(body, "The realm can't save a character order right now. Try again later.")),
                 HttpStatusCode.BadRequest => new CharacterOrderResult(CharacterOrderOutcome.NotTried,
-                    Message(body, "The realm didn't understand that order. Nothing was saved.")),
+                    Message(body, "The realm didn't understand that order. Nothing was saved."), null, BadRequestCode),
                 >= HttpStatusCode.BadRequest and < HttpStatusCode.InternalServerError => new CharacterOrderResult(CharacterOrderOutcome.NotTried,
                     Message(body, $"The realm answered {(int)response.StatusCode} {response.ReasonPhrase}. Nothing was saved.")),
                 // A 502 or a proxy's 504 could have come after the order was written.

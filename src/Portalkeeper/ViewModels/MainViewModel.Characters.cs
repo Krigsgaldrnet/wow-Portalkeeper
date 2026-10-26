@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -84,10 +85,10 @@ public sealed partial class MainViewModel
     {
         if (_characters is not null) return true;
         if (_session is not { } session || !CharactersAvailable) return false;
-        var characters = new CharactersViewModel(_characterOrderService, session, IsGameRunning || IsLaunching);
+        var characters = new CharactersViewModel(_characterOrderService, session, IsGameRunning || IsLaunching,
+            (guids, cancellationToken) => SavePageOrderAsync(session, guids, cancellationToken));
         characters.LoginExpired += message => _ = ShopLoginExpiredAsync(message);
         characters.Unavailable += CharactersTurnedOff;
-        characters.OrderSaved += ForgetPendingCharacterOrder;
         _characters = characters;
         OnPropertyChanged(nameof(Characters));
         return true;
@@ -106,7 +107,6 @@ public sealed partial class MainViewModel
     {
         if (_characters is not { } characters) return;
         characters.Unavailable -= CharactersTurnedOff;
-        characters.OrderSaved -= ForgetPendingCharacterOrder;
         _characters = null;
         characters.Dispose();
         OnPropertyChanged(nameof(Characters));
@@ -140,14 +140,15 @@ public sealed partial class MainViewModel
     }
 
     /// <summary>
-    /// The page saved an order: one the game left behind is older, and sent later it would undo the
-    /// page's. The kept one goes; accountList's only while no launch or game is under way.
+    /// The page's SAVE, through <see cref="CharacterOrderSync"/>: it waits for an order from the game on
+    /// its way (and overtakes it), and once saved, drops the one the game left behind, which is older.
+    /// accountList is only written while no launch or game is under way.
     /// </summary>
-    private void ForgetPendingCharacterOrder()
+    private Task<CharacterOrderResult> SavePageOrderAsync(LauncherSession session, IReadOnlyList<uint> guids, CancellationToken cancellationToken)
     {
-        if (_session?.AccountName is not { } account) return;
         var root = EffectiveClientPath;
-        var builtIn = RealmBranding.IsBuiltIn(_realmInfo) && !IsIsolatedRealm;
-        _ = OrderSync.ForgetAsync(account, root, () => builtIn && ClientValid && !IsLaunching && !IsGameRunning);
+        var ownClient = RealmBranding.IsBuiltIn(_realmInfo) && !IsIsolatedRealm;
+        return OrderSync.SavePageOrderAsync(session, guids, root,
+            () => ownClient && ClientValid && !IsLaunching && !IsGameRunning, cancellationToken);
     }
 }

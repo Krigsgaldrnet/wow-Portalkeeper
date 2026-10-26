@@ -375,18 +375,21 @@ internal static partial class Program
         portal.HoldSave.SetResult();
         check("char order sync: the sync that had the turn finishes", (await first)?.Outcome == CharacterOrderOutcome.Saved);
 
-        // A page save while an after-game send is on its way wins.
+        // A page save while an after-game send is on its way: it waits, and the realm ends with the page's order.
         portal = new FakeCharacterPortal { HoldSave = new TaskCompletionSource() };
         sync = NewSync(portal);
         SetAccountList(AliceOrder("2,3"));
         var afterGame = sync.SyncAsync(session, syncClient, Always);
         await portal.SaveArrived.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        var pageSave = sync.ForgetAsync("Alice", syncClient, Always);
+        var pageSave = sync.SavePageOrderAsync(session, [15u, 16u, 12u, 14u], syncClient, Always);
+        check("char order sync: a page save waits for the game's order on its way", !pageSave.IsCompleted && portal.Saves == 1);
         portal.HoldSave.SetResult();
         var overtaken = await afterGame;
-        await pageSave;
-        check("char order sync: a send overtaken by a page save changes nothing after it",
-            overtaken is null && sync.Waiting("ALICE") is null && AccountList() == "");
+        var pageResult = await pageSave;
+        check("char order sync: the realm ends with the page's order, and the overtaken sync changes nothing after it",
+            overtaken is null && pageResult.Outcome == CharacterOrderOutcome.Saved && portal.Applied.Count == 2
+            && portal.Applied[0].SequenceEqual([14u, 15u]) && portal.Applied[^1].SequenceEqual([15u, 16u, 12u, 14u])
+            && sync.Waiting("ALICE") is null && AccountList() == "");
 
         // Every account keeps its own.
         portal = new FakeCharacterPortal { SaveStatus = 503, SaveJson = """{"error":"Character ordering isn't available right now."}""" };
@@ -413,6 +416,18 @@ internal static partial class Program
         SetAccountList(AliceOrder("1"));
         check("char order sync: a character that isn't the account's any more ends it",
             (await sync.SyncAsync(session, syncClient, Always))?.Outcome == CharacterOrderOutcome.Refused && sync.Waiting("ALICE") is null);
+        portal = new FakeCharacterPortal { SaveStatus = 409, SaveJson = """{"error":"duplicate","message":"A character is in the order twice."}""" };
+        sync = NewSync(portal);
+        SetAccountList(AliceOrder("1"));
+        check("char order sync: any other refusal (409) ends it too, not sent forever",
+            (await sync.SyncAsync(session, syncClient, Always))?.Outcome == CharacterOrderOutcome.Refused && sync.Waiting("ALICE") is null
+            && await sync.SyncAsync(session, syncClient, Always) is null && portal.Saves == 1);
+        portal = new FakeCharacterPortal { SaveStatus = 400, SaveJson = """{"error":"Send the order as a list of character guids."}""" };
+        sync = NewSync(portal);
+        SetAccountList(AliceOrder("1"));
+        check("char order sync: a malformed order (400) ends it",
+            (await sync.SyncAsync(session, syncClient, Always)) is { Outcome: CharacterOrderOutcome.NotTried, Code: CharacterOrderService.BadRequestCode }
+            && sync.Waiting("ALICE") is null && await sync.SyncAsync(session, syncClient, Always) is null && portal.Saves == 1);
         portal = new FakeCharacterPortal { SaveStatus = 429, SaveJson = """{"error":"Your last save is still going through. Try again in a moment."}""" };
         sync = NewSync(portal);
         SetAccountList(AliceOrder("1"));
@@ -432,11 +447,18 @@ internal static partial class Program
         check("char order sync: an expired login is a logout, the order kept",
             (await sync.SyncAsync(session with { Token = "old" }, syncClient, Always))?.Outcome == CharacterOrderOutcome.LoggedOut
             && sync.Waiting("ALICE") is not null);
-        await sync.ForgetAsync("ALICE", syncClient, Always);
+        portal.SaveStatus = 503;
+        portal.SaveJson = """{"error":"Character ordering isn't available right now."}""";
+        check("char order sync: a page save the realm didn't take keeps the waiting order",
+            (await sync.SavePageOrderAsync(session, [12u], syncClient, Always)).Outcome == CharacterOrderOutcome.NotTried
+            && sync.Waiting("ALICE") is not null && AccountList() == AliceOrder("1"));
+        portal.SaveStatus = 200;
+        portal.SaveJson = CharacterListJson;
         check("char order sync: a page save drops the waiting order and the account's accountList",
-            sync.Waiting("ALICE") is null && AccountList() == "");
+            (await sync.SavePageOrderAsync(session, [12u], syncClient, Always)).Outcome == CharacterOrderOutcome.Saved
+            && sync.Waiting("ALICE") is null && AccountList() == "");
         File.WriteAllText(syncConfig, "SET accountList \"portalkeeper:hunter2\"\r\n");
-        await sync.ForgetAsync("ALICE", syncClient, Always);
+        await sync.SavePageOrderAsync(session, [12u], syncClient, Always);
         check("char order sync: a page save never touches a login handoff", AccountList() == "portalkeeper:hunter2");
         var reloaded = new SettingsService(Path.Combine(root, "charorder-settings2", "settings.json"));
         var kept = reloaded.Load();
@@ -448,8 +470,6 @@ internal static partial class Program
         // The page.
         portal = new FakeCharacterPortal();
         var page = new CharactersViewModel(Service(portal), session);
-        var savedEvents = 0;
-        page.OrderSaved += () => savedEvents++;
         await page.LoadAsync();
         string Order() => string.Join(",", page.Characters.Select(c => c.Name));
         check("char order page: the list shows in the realm's order, numbered",
@@ -485,10 +505,15 @@ internal static partial class Program
         page.SetGameRunning(false);
         portal.SaveJson = CharacterListJson.Replace("""{"guid":16,"name":"Zaph","race":10,"class":8,"gender":1,"level":70,"lastPlayed":0,"online":false,"order":null},""", "")
             .Replace("""{"characters":[""", """{"characters":[{"guid":16,"name":"Zaph","race":10,"class":8,"gender":1,"level":70,"lastPlayed":0,"online":false,"order":0},""");
+        var pageSaves = 0;
+        page = new CharactersViewModel(Service(portal), session, save: (guids, token) => { pageSaves++; return Service(portal).SaveAsync(session, guids, token); });
+        await page.LoadAsync();
+        page.Sort(CharacterSort.Level);
         await page.SaveAsync();
+        check("char order page: SAVE goes through the save it's given", pageSaves == 1);
         check("char order page: save sends the draft and shows what the realm has",
             portal.LastSave?.GetProperty("order").EnumerateArray().Select(e => e.GetUInt32()).SequenceEqual([16u, 12u, 14u, 15u]) == true
-            && Order() == "Zaph,Pawster,Ironhide,Oldhc" && !page.HasUnsavedChanges && savedEvents == 1 && page is { HasStatus: true, StatusIsError: false });
+            && Order() == "Zaph,Pawster,Ironhide,Oldhc" && !page.HasUnsavedChanges && page is { HasStatus: true, StatusIsError: false });
 
         page.Move(page.Characters[3], 0);
         portal.SaveStatus = 409;
@@ -496,7 +521,7 @@ internal static partial class Program
         await page.SaveAsync();
         check("char order page: a refusal is shown and the draft stays", page is { StatusIsError: true, HasUnsavedChanges: true }
             && page.StatusMessage.StartsWith("That isn't one of your characters any more.", StringComparison.Ordinal)
-            && Order() == "Oldhc,Zaph,Pawster,Ironhide" && savedEvents == 1);
+            && Order() == "Oldhc,Zaph,Pawster,Ironhide");
 
         portal.Status = 404;
         var gone = false;
@@ -516,6 +541,8 @@ internal static partial class Program
         public bool Offline;
         public HttpRequestError OfflineError = HttpRequestError.Unknown;
         public int Authorized, Unauthorized, Listings, Saves;
+        /// <summary>Every POSTed order, in the order the stand-in realm applied them.</summary>
+        public readonly List<uint[]> Applied = [];
         /// <summary>A POST waits for this (or its cancellation) once it has arrived.</summary>
         public TaskCompletionSource? HoldSave;
         public readonly TaskCompletionSource SaveArrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -548,6 +575,7 @@ internal static partial class Program
             LastSave = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken)).RootElement.Clone();
             SaveArrived.TrySetResult();
             if (HoldSave is { } hold) await hold.Task.WaitAsync(cancellationToken);
+            if (SaveStatus == 200) Applied.Add(LastSave.Value.GetProperty("order").EnumerateArray().Select(e => e.GetUInt32()).ToArray());
             return Json(SaveStatus, SaveJson);
         }
 

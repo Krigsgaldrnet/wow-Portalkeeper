@@ -29,6 +29,7 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
 {
     private readonly CharacterOrderService _service;
     private readonly LauncherSession _session;
+    private readonly Func<IReadOnlyList<uint>, CancellationToken, Task<CharacterOrderResult>> _save;
     private readonly CancellationTokenSource _closed = new();
     private IReadOnlyList<uint> _saved = [];
     private int _loadVersion;
@@ -42,19 +43,23 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
     private bool _statusIsError;
     private CharacterOrderRowView? _selectedCharacter;
 
-    public CharactersViewModel(CharacterOrderService service, LauncherSession session, bool gameRunning = false)
+    /// <param name="save">
+    /// Saves an order (guids, top first). The launcher's goes through <see cref="CharacterOrderSync"/>, so
+    /// it waits for, or overtakes, an order from the game on its way; null saves with <paramref name="service"/>.
+    /// </param>
+    public CharactersViewModel(CharacterOrderService service, LauncherSession session, bool gameRunning = false,
+        Func<IReadOnlyList<uint>, CancellationToken, Task<CharacterOrderResult>>? save = null)
     {
         _service = service;
         _session = session;
         _isGameRunning = gameRunning;
+        _save = save ?? ((guids, cancellationToken) => service.SaveAsync(session, guids, cancellationToken));
     }
 
     /// <summary>The portal says the login is no longer good (401), with its message.</summary>
     public event Action<string>? LoginExpired;
     /// <summary>The portal answered 404: the realm has no character order.</summary>
     public event Action? Unavailable;
-    /// <summary>An order was saved from this page: one the game left behind is out of date now.</summary>
-    public event Action? OrderSaved;
 
     public ObservableCollection<CharacterOrderRowView> Characters { get; } = [];
 
@@ -222,7 +227,7 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
         IsSaving = true;
         SetStatus("Saving the order...", false);
         CharacterOrderResult result;
-        try { result = await _service.SaveAsync(_session, guids, _closed.Token); }
+        try { result = await _save(guids, _closed.Token); }
         catch (OperationCanceledException) { return; }
         finally { IsSaving = false; }
 
@@ -233,7 +238,6 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
                 IsLoading = false;
                 Apply(characters, keepDraft: false);
                 SetStatus("Saved. The character select screen shows this order the next time you log in.", false);
-                OrderSaved?.Invoke();
                 return;
             case CharacterOrderOutcome.LoggedOut:
                 SetStatus(result.Message, true);
