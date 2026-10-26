@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
@@ -13,7 +15,8 @@ namespace Portalkeeper.ViewModels;
 // is shown once the portal has answered a list for this login, like LEGACY: a realm without it
 // answers 404 and the link stays hidden. The game's character select screen reorders too, but it
 // can't reach the realm: it leaves the order in Config.wtf, and the launcher sends it before the next
-// launch and after the game exits, then empties it. Sending it never holds up a launch for long.
+// launch and after the game exits, then empties it; until the realm has it the launcher keeps its own
+// copy in its settings. Sending it never holds up a launch for long.
 public sealed partial class MainViewModel
 {
     /// <summary>How long ENTER REALM waits for an order the game left to be sent; after that it goes next time.</summary>
@@ -109,10 +112,13 @@ public sealed partial class MainViewModel
     }
 
     /// <summary>
-    /// Sends the order the game's character select screen left in Config.wtf for this login's account,
-    /// and empties it once the realm has it. Anything else (no answer, a refusal) leaves it for the
-    /// next try. Before a launch it's given <paramref name="limit"/>; a login that expired is only
-    /// acted on after the game (<paramref name="afterGame"/>), never in the middle of ENTER REALM.
+    /// Sends the order the game's character select screen left for this login's account: the one in
+    /// Config.wtf, or else the launcher's own copy of one that wasn't sent yet (the game drops an
+    /// unchanged CVar from Config.wtf on exit). Once the realm has it, both are emptied; anything else
+    /// (no answer, a refusal, out of time) keeps it in the launcher's settings for the next try, a newer
+    /// one from Config.wtf replacing it. Before a launch it's given <paramref name="limit"/>; a login
+    /// that expired is only acted on after the game (<paramref name="afterGame"/>), never in the middle
+    /// of ENTER REALM.
     /// </summary>
     private async Task SendPendingCharacterOrderAsync(bool afterGame, TimeSpan? limit = null)
     {
@@ -125,20 +131,28 @@ public sealed partial class MainViewModel
             var root = EffectiveClientPath;
             string? value;
             try { value = await Task.Run(() => RealmLaunchService.ReadConfigSetting(root, CharacterOrderService.ConfigSetting)); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; }
-            var names = CharacterOrderService.ParsePending(value, session.AccountName);
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { value = null; }
+            var fromConfig = CharacterOrderService.ParsePending(value, session.AccountName);
+            var names = CharacterOrderService.PendingOrder(fromConfig, _savedSettings.PendingCharacterOrder, session.AccountName);
             if (names is null) return;
 
-            using var cancel = limit is { } wait ? new CancellationTokenSource(wait) : new CancellationTokenSource();
-            CharacterOrderResult result;
-            try { result = await _characterOrderService.SendPendingAsync(session, names, cancel.Token); }
-            catch (OperationCanceledException) { return; }
+            CharacterOrderResult? result = null;
+            using (var cancel = limit is { } wait ? new CancellationTokenSource(wait) : new CancellationTokenSource())
+            {
+                try { result = await _characterOrderService.SendPendingAsync(session, names, cancel.Token); }
+                catch (OperationCanceledException) { }
+            }
             if (!ReferenceEquals(session, _session)) return;
 
-            if (result.Outcome == CharacterOrderOutcome.LoggedOut && afterGame) _ = ShopLoginExpiredAsync(result.Message);
-            if (result.Outcome != CharacterOrderOutcome.Saved) return;
+            if (result?.Outcome != CharacterOrderOutcome.Saved)
+            {
+                KeepPendingCharacterOrder(session.AccountName, names);
+                if (result?.Outcome == CharacterOrderOutcome.LoggedOut && afterGame) _ = ShopLoginExpiredAsync(result.Message);
+                return;
+            }
+            KeepPendingCharacterOrder(session.AccountName, null);
             // The game keeps its own copy while it runs and writes it back on exit: the next exit sends it again.
-            if (!IsGameRunning)
+            if (fromConfig is not null && !IsGameRunning)
             {
                 try { await Task.Run(() => RealmLaunchService.ClearConfigSetting(root, CharacterOrderService.ConfigSetting, value!)); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
@@ -148,13 +162,32 @@ public sealed partial class MainViewModel
         finally { _pendingOrderLock.Release(); }
     }
 
+    /// <summary>Keeps an unsent order for <paramref name="account"/> in the settings, or (null) forgets the one it has.</summary>
+    private void KeepPendingCharacterOrder(string account, IReadOnlyList<string>? names)
+    {
+        var kept = _savedSettings.PendingCharacterOrder;
+        if (names is null)
+        {
+            if (kept is null || !string.Equals(kept.Account, account, StringComparison.OrdinalIgnoreCase)) return;
+            _savedSettings.PendingCharacterOrder = null;
+        }
+        else
+        {
+            if (kept is not null && string.Equals(kept.Account, account, StringComparison.OrdinalIgnoreCase) && kept.Names?.SequenceEqual(names) == true) return;
+            _savedSettings.PendingCharacterOrder = new PendingCharacterOrder { Account = account, Names = names.ToList() };
+        }
+        try { SaveSettings(); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
     /// <summary>
     /// The page saved an order: one the game left behind is older, and sent later it would undo the
-    /// page's. Only while the game isn't running (it would write its copy back anyway).
+    /// page's. The launcher's copy goes; Config.wtf's only while the game isn't running (it would write
+    /// its copy back anyway).
     /// </summary>
     private void ForgetPendingCharacterOrder()
     {
         var account = _session?.AccountName;
+        if (account is not null) KeepPendingCharacterOrder(account, null);
         if (IsGameRunning || IsLaunching || !ClientValid || IsIsolatedRealm || !RealmBranding.IsBuiltIn(_realmInfo)) return;
         try
         {

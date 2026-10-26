@@ -22,10 +22,10 @@ internal static partial class Program
           {"guid":0,"name":"Broken"}]}
         """;
 
-    /// <summary>A PE32 stand-in for Wow.exe: one .text section mapped like build 12340's, the guard at its place.</summary>
+    /// <summary>A PE32 stand-in for Wow.exe: one .text section mapped like build 12340's, both guards at their places.</summary>
     private static byte[] StandInClient(uint pointerToRawData = 0x400, uint imageBase = 0x400000, bool longNamePatterns = true)
     {
-        const int textSize = 0x64000;
+        const int textSize = 0x368000;
         var bytes = new byte[0x400 + textSize];
         new Random(70).NextBytes(bytes);
         // No 'p': the long-name patterns are only where they're put.
@@ -62,7 +62,8 @@ internal static partial class Program
         U32(section + 16, textSize);
         U32(section + 20, pointerToRawData);
         U32(section + 36, 0x60000020);
-        Convert.FromHexString("807DFF0AC745F800000000760B").CopyTo(bytes, CharacterListLimitService.GuardOffset);
+        Convert.FromHexString("807DFF0AC745F800000000760B").CopyTo(bytes, 0x6404C);
+        Convert.FromHexString("6A006A006A016A05").CopyTo(bytes, 0x367707);
         if (longNamePatterns)
             Encoding.ASCII.GetBytes("patch-%s-?.MPQ\0\0patch-?.MPQ\0patch-%s.MPQ\0").CopyTo(bytes, 0x2000);
         return bytes;
@@ -83,12 +84,24 @@ internal static partial class Program
         check("char limit: a stock client is changed", CharacterListLimitService.Ensure(client, exe) && CharacterListLimitService.IsSetUp(exe));
         var edited = File.ReadAllBytes(exe);
         var differences = Enumerable.Range(0, stock.Length).Where(i => stock[i] != edited[i]).ToArray();
-        check("char limit: exactly the jbe at 0x64057 becomes a jmp", edited.Length == stock.Length && differences.Length == 1
-            && differences[0] == 0x64057 && stock[0x64057] == 0x76 && edited[0x64057] == 0xEB);
+        check("char limit: exactly the jbe at 0x64057 becomes a jmp and the CVar push 1 at 0x36770C a push 0",
+            edited.Length == stock.Length && differences.SequenceEqual([0x64057, 0x36770C])
+            && stock[0x64057] == 0x76 && edited[0x64057] == 0xEB && stock[0x36770C] == 0x01 && edited[0x36770C] == 0x00);
         check("char limit: the file it replaced is kept", Backups().Length == 1 && File.ReadAllBytes(Backups()[0]).AsSpan().SequenceEqual(stock));
         check("char limit: a client that's set up is left alone", !CharacterListLimitService.Ensure(client, exe)
             && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited) && Backups().Length == 1
             && Directory.EnumerateFiles(client).Count() == 1);
+
+        // A client with only one of the two (the first release had only the limit) is finished.
+        foreach (var only in new[] { 0x64057, 0x36770C })
+        {
+            var half = (byte[])stock.Clone();
+            half[only] = edited[only];
+            File.WriteAllBytes(exe, half);
+            check($"char limit: a client with only the edit at 0x{only:X} gets the other one",
+                !CharacterListLimitService.IsSetUp(exe) && CharacterListLimitService.Ensure(client, exe)
+                && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited));
+        }
 
         // Both edits, in either order, give the same file: a client torrent can carry it.
         File.WriteAllBytes(exe, stock);
@@ -99,9 +112,9 @@ internal static partial class Program
         check("char limit: with the long-name edit, either order gives the same file", longFirst && limitFirst
             && File.ReadAllBytes(exe).AsSpan().SequenceEqual(both)
             && LongPatchNameService.IsSetUp(exe) && CharacterListLimitService.IsSetUp(exe)
-            && Enumerable.Range(0, stock.Length).Count(i => stock[i] != both[i]) == 3);
-        // stock, stock + long names, stock + char limit: one backup each, keyed by what was replaced.
-        check("char limit: every version it replaced is kept once", Backups().Length == 3);
+            && Enumerable.Range(0, stock.Length).Count(i => stock[i] != both[i]) == 4);
+        // stock, the two half-edited ones, stock + long names, stock + char edits: one backup each, keyed by what was replaced.
+        check("char limit: every version it replaced is kept once", Backups().Length == 5);
 
         // Anything else is refused and left as it was.
         var backupsSoFar = Backups().Length;
@@ -116,12 +129,18 @@ internal static partial class Program
             return ensured && asked && File.ReadAllBytes(foreign).AsSpan().SequenceEqual(bytes);
         }
         var wrongGuard = (byte[])stock.Clone();
-        wrongGuard[CharacterListLimitService.GuardOffset + 3] = 0x0B; // cmp ..., 0x0b
+        wrongGuard[0x6404C + 3] = 0x0B; // cmp ..., 0x0b
         check("char limit: a different guard is refused", Refused(wrongGuard));
         var otherJump = (byte[])stock.Clone();
-        otherJump[CharacterListLimitService.JumpOffset] = 0x75; // jne
+        otherJump[0x64057] = 0x75; // jne
         check("char limit: another jump is refused", Refused(otherJump));
-        check("char limit: a file that isn't a PE is refused", Refused(Encoding.ASCII.GetBytes("not a client").Concat(new byte[0x70000]).ToArray()));
+        var wrongCVarGuard = (byte[])stock.Clone();
+        wrongCVarGuard[0x367707 + 7] = 0x06; // push 6
+        check("char limit: a different CVar guard is refused", Refused(wrongCVarGuard));
+        var otherFlag = (byte[])stock.Clone();
+        otherFlag[0x36770C] = 0x02; // push 2
+        check("char limit: another CVar flag is refused", Refused(otherFlag));
+        check("char limit: a file that isn't a PE is refused", Refused(Encoding.ASCII.GetBytes("not a client").Concat(new byte[0x370000]).ToArray()));
         check("char limit: a PE with another image base is refused", Refused(StandInClient(imageBase: 0x10000000)));
         check("char limit: a PE whose .text sits elsewhere in the file is refused", Refused(StandInClient(pointerToRawData: 0x600)));
         check("char limit: a refused file leaves no backup and no temp file", Backups().Length == backupsSoFar
@@ -182,6 +201,24 @@ internal static partial class Program
             && CharacterOrderService.ParsePending("ALICE:Zaph", null) is null);
         check("char order: a name twice counts once", CharacterOrderService.ParsePending("ALICE:Zaph,zaph,Pawster", "ALICE") is { } twice
             && twice.SequenceEqual(["Zaph", "Pawster"]));
+
+        // The launcher's own copy of an unsent order.
+        var kept = new PendingCharacterOrder { Account = "alice", Names = ["Ironhide", " Zaph", "", "ironhide"] };
+        check("char order: an order in Config.wtf wins over the launcher's copy",
+            CharacterOrderService.PendingOrder(["Pawster"], kept, "ALICE") is { } newer && newer.SequenceEqual(["Pawster"]));
+        check("char order: without one, the launcher's copy for this account is sent, cleaned up",
+            CharacterOrderService.PendingOrder(null, kept, "ALICE") is { } old && old.SequenceEqual(["Ironhide", "Zaph"]));
+        check("char order: another account's copy, an empty copy, or none: nothing",
+            CharacterOrderService.PendingOrder(null, kept, "BOB") is null
+            && CharacterOrderService.PendingOrder(null, new PendingCharacterOrder { Account = "ALICE" }, "ALICE") is null
+            && CharacterOrderService.PendingOrder(null, null, "ALICE") is null);
+        var settingsPath = Path.Combine(root, "charorder-settings", "settings.json");
+        var settingsService = new SettingsService(settingsPath);
+        var settings = settingsService.Load();
+        settings.PendingCharacterOrder = new PendingCharacterOrder { Account = "ALICE", Names = ["Zaph", "Pawster"] };
+        settingsService.Save(settings);
+        check("char order: the launcher's copy survives a restart",
+            settingsService.Load().PendingCharacterOrder is { Account: "ALICE" } reloaded && reloaded.Names.SequenceEqual(["Zaph", "Pawster"]));
 
         // The portal.
         var api = new Uri("https://portal.test/api/launcher/");

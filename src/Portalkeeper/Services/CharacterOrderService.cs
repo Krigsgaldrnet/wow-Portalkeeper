@@ -188,6 +188,21 @@ public sealed class CharacterOrderService
         return names.Length == 0 ? null : names;
     }
 
+    /// <summary>
+    /// The order to send for <paramref name="account"/>: the one Config.wtf holds (<paramref name="fromConfig"/>,
+    /// from <see cref="ParsePending"/>), being newer, else the launcher's unsent copy when it's this
+    /// account's. Null when there's neither.
+    /// </summary>
+    public static IReadOnlyList<string>? PendingOrder(IReadOnlyList<string>? fromConfig, PendingCharacterOrder? kept, string? account)
+    {
+        if (fromConfig is not null) return fromConfig;
+        if (kept is null || string.IsNullOrWhiteSpace(account) || !string.Equals(kept.Account.Trim(), account.Trim(), StringComparison.OrdinalIgnoreCase))
+            return null;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var names = (kept.Names ?? []).Select(n => (n ?? "").Trim()).Where(n => n.Length > 0 && seen.Add(n)).ToArray();
+        return names.Length == 0 ? null : names;
+    }
+
     /// <summary>The guids of the characters named, in that order. Names are unique on a realm and compared without case.</summary>
     public static IReadOnlyList<uint> GuidsFor(IReadOnlyList<string> names, IReadOnlyList<OrderedCharacter> characters)
     {

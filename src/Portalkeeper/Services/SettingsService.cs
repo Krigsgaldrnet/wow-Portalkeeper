@@ -103,4 +103,14 @@ public sealed class PortalkeeperSettings
     // failed, so automatic retries of that version wait a while (UPDATE NOW always tries).
     public string? LastSelfUpdateVersion { get; set; }
     public DateTimeOffset? LastSelfUpdateUtc { get; set; }
+    // Evermore fork: an order the character select screen left that the realm hasn't saved yet. The
+    // game drops a CVar from Config.wtf on exit when it didn't change, so the launcher keeps its own copy.
+    public PendingCharacterOrder? PendingCharacterOrder { get; set; }
+}
+
+/// <summary>An unsent character order (CharacterOrderService): the account it's for and its names, top first.</summary>
+public sealed class PendingCharacterOrder
+{
+    public string Account { get; set; } = string.Empty;
+    public List<string> Names { get; set; } = new();
 }

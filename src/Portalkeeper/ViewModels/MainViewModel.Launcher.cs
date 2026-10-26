@@ -859,7 +859,7 @@ public sealed partial class MainViewModel
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
         {
-            _syncStatus = UserErrorService.Format(ex, "Couldn't set World of Warcraft up for more than 10 characters; CHECK AGAIN retries");
+            _syncStatus = UserErrorService.Format(ex, "Couldn't set World of Warcraft up for the realm's character select screen; CHECK AGAIN retries");
             UpdateLaunchReadinessStatus();
             return false;
         }

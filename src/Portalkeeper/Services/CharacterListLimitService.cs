@@ -6,40 +6,54 @@ using System.Reflection.PortableExecutable;
 namespace Portalkeeper.Services;
 
 /// <summary>
-/// Evermore fork: lets the character select screen list more than 10 characters on the realm.
+/// Evermore fork: sets the character select screen up for the realm's character limit and order.
+/// Two one-byte edits, always the same file:
 ///
-/// The stock client (build 12340) checks the count in its SMSG_CHAR_ENUM handler (0x464C10):
-/// <c>cmp byte [ebp-1], 0x0a</c> / <c>jbe</c>. With more than 10 it empties the whole list, and the
-/// player sees no characters at all. Everything after that grows with the list (up to 255), so turning
-/// the <c>jbe</c> (0x76) into a <c>jmp</c> (0xEB) is the whole edit: one byte, always the same file.
+/// - More than 10 characters. The stock client (build 12340) checks the count in its SMSG_CHAR_ENUM
+///   handler (0x464C10): <c>cmp byte [ebp-1], 0x0a</c> / <c>jbe</c>. With more than 10 it empties the
+///   whole list, and the player sees no characters at all. Everything after that grows with the list
+///   (up to 255), so the <c>jbe</c> (0x76) becomes a <c>jmp</c> (0xEB).
+/// - The order CVar. A <c>SET name "value"</c> line in Config.wtf for a CVar the client doesn't know
+///   makes a placeholder: the console's set command registers it with "unregistered" = 1
+///   (<c>push 1</c> at 0x76830B, the call to CVar::Register at 0x767FC0), and GetCVar / SetCVar skip
+///   placeholders, so the character select screen can't read or write evermoreCharOrder. Pushing 0
+///   registers it as a real CVar. Nothing in the client looks a CVar up to decide whether to register it.
 ///
-/// Only that exact place is changed: the PE has to map it to .text where build 12340 has it and the
-/// bytes around it have to be the stock or the edited ones, else the file is refused.
+/// Only those exact places are changed: the PE has to map each to .text where build 12340 has it and
+/// the bytes around it have to be the stock or the edited ones, else the file is refused.
 /// </summary>
 public static class CharacterListLimitService
 {
-    /// <summary>Where the guard starts: <c>cmp byte [ebp-1],0x0a</c>, then <c>mov dword [ebp-8],0</c>, then the jump.</summary>
-    public const int GuardOffset = 0x6404C;
-    public const int GuardRva = 0x64C4C;
-    /// <summary>The jump's opcode byte.</summary>
-    public const int JumpOffset = 0x64057;
-    public const byte StockJump = 0x76; // jbe rel8
-    public const byte EditedJump = 0xEB; // jmp rel8
+    /// <param name="GuardOffset">Where the guard bytes start in the file.</param>
+    /// <param name="GuardRva">The same place in the image.</param>
+    /// <param name="Stock">The guard bytes in the stock client.</param>
+    /// <param name="ByteOffset">The byte that changes, in the file.</param>
+    /// <param name="Edited">What it becomes.</param>
+    public sealed record Edit(string Name, int GuardOffset, int GuardRva, byte[] Stock, int ByteOffset, byte Edited);
 
-    private static readonly byte[] StockGuard = Convert.FromHexString("807DFF0AC745F800000000760B");
+    /// <summary><c>cmp byte [ebp-1],0x0a</c>, <c>mov dword [ebp-8],0</c>, <c>jbe</c> (0x76) → <c>jmp</c> (0xEB).</summary>
+    public static readonly Edit CharacterLimit = new("character limit", 0x6404C, 0x64C4C,
+        Convert.FromHexString("807DFF0AC745F800000000760B"), 0x64057, 0xEB);
+
+    /// <summary>The console set command's <c>push 0, push 0, push 1, push 5</c>: the 1 ("unregistered") → 0.</summary>
+    public static readonly Edit RegisteredCVars = new("registered CVars", 0x367707, 0x368307,
+        Convert.FromHexString("6A006A006A016A05"), 0x36770C, 0x00);
+
+    public static readonly Edit[] Edits = [CharacterLimit, RegisteredCVars];
 
     /// <summary>
-    /// True when <paramref name="executable"/> already lists more than 10 characters. Throws when the
-    /// file isn't a client this knows how to edit.
+    /// True when <paramref name="executable"/> has both edits. Throws when the file isn't a client this
+    /// knows how to edit.
     /// </summary>
     public static bool IsSetUp(string executable) =>
         Edited(File.ReadAllBytes(executable), Path.GetFileName(executable)) is null;
 
     /// <summary>
     /// Makes <paramref name="executable"/> (inside the client <paramref name="root"/>) list more than
-    /// 10 characters. Returns true when it changed the file, false when it already did. The file it
-    /// replaces is kept under .portalkeeper/backups (<see cref="ClientExecutableEdit"/>). Throws when
-    /// the file isn't a client this knows how to edit; a failure leaves the file as it was.
+    /// 10 characters and keep the order CVar. Returns true when it changed the file, false when it
+    /// already had both edits. The file it replaces is kept under .portalkeeper/backups
+    /// (<see cref="ClientExecutableEdit"/>). Throws when the file isn't a client this knows how to edit;
+    /// a failure leaves the file as it was.
     /// </summary>
     public static bool Ensure(string root, string executable)
     {
@@ -51,20 +65,23 @@ public static class CharacterListLimitService
         return true;
     }
 
-    /// <summary>The file with the jump edited, or null when it has it already.</summary>
+    /// <summary>The file with every edit made, or null when it has them all already.</summary>
     internal static byte[]? Edited(byte[] original, string name)
     {
-        CheckGuard(original, name);
-        if (original[JumpOffset] == EditedJump) return null;
+        var headers = Headers(original, name);
+        foreach (var edit in Edits) CheckGuard(original, headers, edit, name);
+        var missing = Edits.Where(e => original[e.ByteOffset] != e.Edited).ToArray();
+        if (missing.Length == 0) return null;
         var bytes = (byte[])original.Clone();
-        bytes[JumpOffset] = EditedJump;
+        foreach (var edit in missing) bytes[edit.ByteOffset] = edit.Edited;
         return bytes;
     }
 
-    /// <summary>Throws unless the image maps the guard where build 12340 has it, in its stock or edited form.</summary>
-    private static void CheckGuard(byte[] bytes, string name)
+    private static InvalidDataException Refused(string name) =>
+        new(name + " isn't a 3.3.5a client that can be set up for the realm's characters.");
+
+    private static PEHeaders Headers(byte[] bytes, string name)
     {
-        var refused = new InvalidDataException(name + " isn't a 3.3.5a client that can be set up for more than 10 characters.");
         PEHeaders headers;
         try
         {
@@ -72,26 +89,33 @@ public static class CharacterListLimitService
             using var pe = new PEReader(stream);
             headers = pe.PEHeaders;
         }
-        catch (BadImageFormatException) { throw refused; }
+        catch (BadImageFormatException) { throw Refused(name); }
         if (headers.CoffHeader.Machine != Machine.I386 || headers.PEHeader?.Magic != PEMagic.PE32 ||
             headers.PEHeader.ImageBase != 0x400000)
-            throw refused;
-        var matches = headers.SectionHeaders.Where(s => GuardRva >= s.VirtualAddress &&
-            (long)GuardRva + StockGuard.Length <= (long)s.VirtualAddress + Math.Max(s.VirtualSize, s.SizeOfRawData)).ToArray();
-        if (matches.Length != 1 || matches[0].Name != ".text") throw refused;
-        var section = matches[0];
-        var delta = (long)GuardRva - section.VirtualAddress;
-        var offset = (long)section.PointerToRawData + delta;
-        if (delta + StockGuard.Length > section.SizeOfRawData || offset != GuardOffset || offset + StockGuard.Length > bytes.Length)
-            throw refused;
+            throw Refused(name);
+        return headers;
+    }
 
-        // The guard in either form: everything but the jump's opcode, and that one stock or edited.
-        var guard = bytes.AsSpan(GuardOffset, StockGuard.Length);
-        var jumpAt = JumpOffset - GuardOffset;
-        for (var i = 0; i < StockGuard.Length; i++)
+    /// <summary>Throws unless the image maps the guard where build 12340 has it, in its stock or edited form.</summary>
+    private static void CheckGuard(byte[] bytes, PEHeaders headers, Edit edit, string name)
+    {
+        var length = edit.Stock.Length;
+        var matches = headers.SectionHeaders.Where(s => edit.GuardRva >= s.VirtualAddress &&
+            (long)edit.GuardRva + length <= (long)s.VirtualAddress + Math.Max(s.VirtualSize, s.SizeOfRawData)).ToArray();
+        if (matches.Length != 1 || matches[0].Name != ".text") throw Refused(name);
+        var section = matches[0];
+        var delta = (long)edit.GuardRva - section.VirtualAddress;
+        var offset = (long)section.PointerToRawData + delta;
+        if (delta + length > section.SizeOfRawData || offset != edit.GuardOffset || offset + length > bytes.Length)
+            throw Refused(name);
+
+        // Everything but the edited byte as in the stock client, and that one stock or edited.
+        var guard = bytes.AsSpan(edit.GuardOffset, length);
+        var changed = edit.ByteOffset - edit.GuardOffset;
+        for (var i = 0; i < length; i++)
         {
-            if (i == jumpAt ? guard[i] is not (StockJump or EditedJump) : guard[i] != StockGuard[i])
-                throw refused;
+            if (i == changed ? guard[i] != edit.Stock[i] && guard[i] != edit.Edited : guard[i] != edit.Stock[i])
+                throw Refused(name);
         }
     }
 }
