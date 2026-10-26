@@ -45,6 +45,7 @@ public sealed class SettingsService
             settings.ShowTransmogrifiedAppearancesByRealm ??= new();
             settings.ClientCacheVersions ??= new();
             settings.PatchChoicesByRealm ??= new();
+            settings.PendingCharacterOrders ??= new();
             return settings;
         }
         catch
@@ -103,4 +104,17 @@ public sealed class PortalkeeperSettings
     // failed, so automatic retries of that version wait a while (UPDATE NOW always tries).
     public string? LastSelfUpdateVersion { get; set; }
     public DateTimeOffset? LastSelfUpdateUtc { get; set; }
+    // Evermore fork: orders the character select screen left that the realm hasn't saved yet, by account
+    // (upper case). The launcher's login handoff overwrites accountList, where the game leaves them.
+    public Dictionary<string, PendingCharacterOrder> PendingCharacterOrders { get; set; } = new();
+}
+
+/// <summary>
+/// An unsent character order (CharacterOrderSync): the accountList value the game left
+/// (<see cref="SourceValue"/>), and once the realm's list was read, the guids it came to, top first.
+/// </summary>
+public sealed class PendingCharacterOrder
+{
+    public string? SourceValue { get; set; }
+    public List<uint> Guids { get; set; } = new();
 }

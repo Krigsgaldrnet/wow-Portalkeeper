@@ -1,0 +1,175 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Portalkeeper.ViewModels"
+             xmlns:views="using:Portalkeeper.Views"
+             x:Class="Portalkeeper.Views.CharactersPage"
+             x:DataType="vm:MainViewModel">
+
+    <!-- Evermore fork: the CHARACTERS page. The account's characters in the order the character select
+         screen shows them; drag a row, move the picked one, or sort, then SAVE. Its view model
+         (Characters) lives while the player is logged in (MainViewModel.Characters.cs). -->
+    <UserControl.Styles>
+        <Style Selector="ListBox.order">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="ListBox.order ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+        <!-- DragonUI's warm highlight rather than the system accent -->
+        <Style Selector="ListBox.order ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#22E8B64C" />
+        </Style>
+        <Style Selector="ListBox.order ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#3DE8B64C" />
+        </Style>
+
+        <Style Selector="Border.row">
+            <Setter Property="Background" Value="#B31A140E" />
+            <Setter Property="BorderBrush" Value="#4D3B20" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="10,8" />
+        </Style>
+        <!-- The picked row, which UP / DOWN move -->
+        <Style Selector="ListBox.order ListBoxItem:selected Border.row">
+            <Setter Property="Background" Value="#E63A2A14" />
+            <Setter Property="BorderBrush" Value="#9A6B1E" />
+        </Style>
+        <!-- Where a dragged row goes -->
+        <Style Selector="Border.row.drop">
+            <Setter Property="BorderBrush" Value="#E8B64C" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+
+        <Style Selector="Button.sort">
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="FontSize" Value="11.5" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#E61A140E" />
+            <Setter Property="BorderBrush" Value="#4D3B20" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+        <Style Selector="TextBlock.serif">
+            <Setter Property="FontFamily" Value="avares://Portalkeeper/Assets/Fonts#Cinzel" />
+        </Style>
+    </UserControl.Styles>
+
+    <ThemeVariantScope RequestedThemeVariant="Dark">
+    <Panel DataContext="{Binding Characters}">
+    <Grid x:DataType="vm:CharactersViewModel" RowDefinitions="Auto,Auto,*,Auto">
+
+        <!-- Header: REVERT / SAVE -->
+        <views:PageBanner Grid.Row="0" Title="CHARACTERS"
+                          Subtitle="The order your characters show in on the character select screen.">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" IsVisible="{Binding HasCharacters}">
+                <Button Content="REVERT" Click="Revert_Click" IsEnabled="{Binding CanRevert}" Padding="12,8"
+                        ToolTip.Tip="Back to the order the realm has" />
+                <Button Classes="gold" Content="SAVE" Click="Save_Click" IsEnabled="{Binding CanSave}" Padding="22,8" FontSize="14"
+                        ToolTip.Tip="Save this order for the character select screen (Ctrl+S)" />
+            </StackPanel>
+        </views:PageBanner>
+
+        <!-- Sorts, moving the picked character, what needs saying -->
+        <Grid Grid.Row="1" Margin="18,8,20,0" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="16" IsVisible="{Binding HasCharacters}">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsEnabled="{Binding CanEdit}">
+                <TextBlock Text="Sort by" Foreground="#AFA28D" VerticalAlignment="Center" Margin="0,0,4,0" />
+                <Button Classes="sort" Content="LEVEL" Tag="Level" Click="Sort_Click" ToolTip.Tip="Highest level first" />
+                <Button Classes="sort" Content="NAME" Tag="Name" Click="Sort_Click" ToolTip.Tip="A to Z" />
+                <Button Classes="sort" Content="CLASS" Tag="Class" Click="Sort_Click" ToolTip.Tip="By class, highest level first" />
+                <Button Classes="sort" Content="LAST PLAYED" Tag="LastPlayed" Click="Sort_Click" ToolTip.Tip="Most recently played first" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <Button Classes="sort" Content="▲ UP" Click="Up_Click" IsEnabled="{Binding CanMoveUp}"
+                        ToolTip.Tip="Move the picked character up (Ctrl+Up)" />
+                <Button Classes="sort" Content="▼ DOWN" Click="Down_Click" IsEnabled="{Binding CanMoveDown}"
+                        ToolTip.Tip="Move the picked character down (Ctrl+Down)" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="1">
+                <TextBlock Text="{Binding GameRunningNote}" IsVisible="{Binding IsGameRunning}" Foreground="#FF8A73" FontSize="12"
+                           TextWrapping="Wrap" />
+                <TextBlock Text="{Binding UnsavedText}" IsVisible="{Binding HasUnsavedChanges}" Foreground="#F6D477" FontSize="12"
+                           FontStyle="Italic" />
+            </StackPanel>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <TextBlock Text="{Binding CountText}" Foreground="#AFA28D" VerticalAlignment="Center" />
+                <Button Content="REFRESH" Click="Refresh_Click" IsEnabled="{Binding CanRefresh}" Padding="12,6" />
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="18,8,18,0">
+            <views:DragonFrame Ground="Marble" Padding="14,12" IsVisible="{Binding HasListing}">
+                <Grid>
+                    <TextBlock IsVisible="{Binding HasNoCharacters}" TextWrapping="Wrap" Foreground="#D8CCBA" Margin="4"
+                               Text="This account has no characters on the realm yet. Make one in the game, then come back to put them in order." />
+                    <ListBox x:Name="CharacterList" Classes="order" ItemsSource="{Binding Characters}"
+                             SelectedItem="{Binding SelectedCharacter}" SelectionMode="Single"
+                             DragDrop.AllowDrop="True" IsVisible="{Binding HasCharacters}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CharacterOrderRowView">
+                                <Border Classes="row" Classes.drop="{Binding IsDropTarget}">
+                                    <Grid ColumnDefinitions="Auto,34,*,70,160,14" ColumnSpacing="10">
+                                        <!-- Grip: the row can be dragged anywhere; this says so -->
+                                        <Path Width="8" Height="16" Stretch="Uniform" Fill="#75694E" VerticalAlignment="Center"
+                                              Data="M 0,0 H 3 V 3 H 0 Z M 5,0 H 8 V 3 H 5 Z M 0,6.5 H 3 V 9.5 H 0 Z M 5,6.5 H 8 V 9.5 H 5 Z M 0,13 H 3 V 16 H 0 Z M 5,13 H 8 V 16 H 5 Z" />
+                                        <TextBlock Grid.Column="1" Classes="serif" Text="{Binding PositionText}" FontSize="15" FontWeight="Bold"
+                                                   Foreground="#C9A27A" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="1">
+                                            <TextBlock Text="{Binding Name}" Foreground="{Binding ClassBrush}" FontWeight="SemiBold" FontSize="14"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Detail}" Foreground="#AFA28D" FontSize="11.5" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="LEVEL" FontSize="9" Foreground="#8C8273" HorizontalAlignment="Center" />
+                                            <TextBlock Text="{Binding LevelText}" FontSize="16" FontWeight="Bold" Foreground="#F6D477" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="4" Text="{Binding LastPlayedText}" Foreground="#AFA28D" FontSize="11.5"
+                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        <Ellipse Grid.Column="5" Width="8" Height="8" Fill="#5CD65C" VerticalAlignment="Center"
+                                                 IsVisible="{Binding Online}" ToolTip.Tip="In the game now" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </views:DragonFrame>
+
+            <!-- First load -->
+            <StackPanel IsVisible="{Binding ShowFirstLoad}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Width="260">
+                <TextBlock Text="Asking for your characters..." Foreground="#D8CCBA" HorizontalAlignment="Center" />
+                <ProgressBar IsIndeterminate="True" Height="3" Foreground="#E8B64C" Background="#26FFFFFF" />
+            </StackPanel>
+
+            <!-- No list -->
+            <Border IsVisible="{Binding HasLoadError}" Classes="card" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    MaxWidth="520" Padding="24,20">
+                <StackPanel Spacing="14">
+                    <TextBlock Text="Your characters can't be shown" Classes="serif" FontSize="18" FontWeight="Bold" Foreground="#F3D58C"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="{Binding LoadError}" Foreground="#D8CCBA" TextWrapping="Wrap" TextAlignment="Center" />
+                    <Button Content="TRY AGAIN" Click="Refresh_Click" IsEnabled="{Binding CanRefresh}" HorizontalAlignment="Center" Padding="16,8" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Status line: what the last save did -->
+        <Border Grid.Row="3" Background="Transparent" BorderBrush="#33FFFFFF" BorderThickness="0,1,0,0" Padding="20,6"
+                IsVisible="{Binding HasStatus}">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                <ProgressBar Width="60" Height="3" IsIndeterminate="True" Foreground="#E8B64C" Background="#26FFFFFF"
+                             VerticalAlignment="Center" IsVisible="{Binding IsSaving}" />
+                <Grid Grid.Column="1">
+                    <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" Foreground="#8EE68E" IsVisible="{Binding !StatusIsError}" />
+                    <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" Foreground="#E58A73" IsVisible="{Binding StatusIsError}" />
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+    </Panel>
+    </ThemeVariantScope>
+</UserControl>

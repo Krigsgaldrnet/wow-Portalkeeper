@@ -534,6 +534,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
             _isLaunching = value;
             OnPropertyChanged();
+            _characters?.SetGameRunning(_isGameRunning || value);
             NotifyInstallChanged();
             OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
             OnPropertyChanged(nameof(EnterRealmButtonText));
@@ -564,6 +565,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
             _isGameRunning = value;
             OnPropertyChanged();
+            _characters?.SetGameRunning(value || _isLaunching);
             NotifyInstallChanged();
             OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
             OnPropertyChanged(nameof(EnterRealmButtonText));
@@ -630,6 +632,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 throw new InvalidOperationException(_clientCheckStatus.Length > 0 ? _clientCheckStatus : "World of Warcraft doesn't match the realm's client.");
             if (!await PrepareLongPatchNamesAsync())
                 throw new InvalidOperationException(_syncStatus.Length > 0 ? _syncStatus : "World of Warcraft isn't set up for the realm's patches yet.");
+            if (!await PrepareCharacterListLimitAsync())
+                throw new InvalidOperationException(_syncStatus.Length > 0 ? _syncStatus : "World of Warcraft isn't set up for more than 10 characters yet.");
             await ClearCacheIfRealmAsksAsync();
             await PrepareIsolatedRuntimeAsync();
             var effectiveClient = _clientService.ValidateClient(EffectiveClientPath, _realmInfo.Client);
@@ -642,6 +646,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             var unsatisfied = currentAddons.Where(a => a.Definition.Required && (!a.IsInstalled || a.IsUpdateAvailable)).ToArray();
             if (unsatisfied.Length > 0) throw new InvalidOperationException("Required addons need attention: " + string.Join(", ", unsatisfied.Select(a => a.Definition.Name)));
             PrepareCombatLogsForLaunch();
+            // An order the character select screen left last time, read before the login handoff writes
+            // accountList; a slow portal doesn't hold the launch, and it never throws.
+            await SendPendingCharacterOrderAsync(afterGame: false, PendingOrderLaunchWait);
             DismissCrash();
             SetRepairStatus("");
             launchedAt = DateTimeOffset.UtcNow;
@@ -683,6 +690,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 _ = UploadCombatLogsAsync(afterGame: true);
                 _ = CheckForCrashAsync(launchedAt);
                 _ = RefreshHomeInfoAsync(whatsNew: true);
+                _ = SendPendingCharacterOrderAsync(afterGame: true);
             }
         }
     }
@@ -780,6 +788,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             {
                 _ = ProbeShopAsync(retry: true);
                 _ = ProbeLegacyAsync(retry: true);
+                _ = ProbeCharactersAsync(retry: true);
             }
         }
     }
@@ -997,6 +1006,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CrashReportsOffered));
         OnPropertyChanged(nameof(ShopAvailable));
         OnPropertyChanged(nameof(LegacyAvailable));
+        OnPropertyChanged(nameof(CharactersAvailable));
         OnPropertyChanged(nameof(PatchNotesAvailable));
         OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
         UpdateLaunchReadinessStatus();

@@ -59,6 +59,9 @@ internal static partial class Program
             // Retired realm patches: removed only while still ours, the client file they replaced restored.
             await RetiredPatchChecks(root, Check);
             LongPatchNameChecks(root, Check);
+            // More than 10 characters per realm, and their order.
+            CharacterListLimitChecks(root, Check);
+            await CharacterOrderChecks(root, Check);
 
             // Saved login.
             var sessionPath = Path.Combine(root, "session", "launcher-session.dat");
