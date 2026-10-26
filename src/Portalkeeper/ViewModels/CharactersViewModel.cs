@@ -74,7 +74,7 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
     public bool StatusIsError { get => _statusIsError; private set => SetProperty(ref _statusIsError, value); }
     public bool HasStatus => _statusMessage.Length > 0;
 
-    /// <summary>World of Warcraft is running: the order stays as it is until it's closed.</summary>
+    /// <summary>World of Warcraft is running or starting: the order stays as it is until it's closed.</summary>
     public bool IsGameRunning => _isGameRunning;
     public string GameRunningNote => "Close World of Warcraft to change the order.";
 

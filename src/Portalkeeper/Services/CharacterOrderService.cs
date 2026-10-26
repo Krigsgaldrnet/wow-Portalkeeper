@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -32,20 +34,21 @@ public enum CharacterOrderOutcome
     Unavailable,
     /// <summary>No answer (502, a lost connection): it may or may not have been saved.</summary>
     Unknown,
-    /// <summary>An order from the game that doesn't fit the realm's list any more (another count of characters): dropped.</summary>
+    /// <summary>An order from the game made against another list than the realm's now (count or hash differ): dropped.</summary>
     Stale,
 }
 
 /// <summary>
-/// An order the character select screen left: <paramref name="Positions"/> are 1-based places in the
-/// realm's list of <paramref name="Count"/> characters, top first; characters it leaves out go after them.
+/// An order the character select screen left for <paramref name="Account"/>: <paramref name="Positions"/>
+/// are 1-based places in the realm's list of <paramref name="Count"/> characters whose names hash to
+/// <paramref name="Hash"/> (<see cref="CharacterOrderService.ListHash"/>), top first; characters it
+/// leaves out go after them.
 /// </summary>
-public sealed record PendingCharacterPositions(int Count, IReadOnlyList<int> Positions);
+public sealed record PendingCharacterPositions(string Account, int Count, uint Hash, IReadOnlyList<int> Positions);
 
 /// <param name="Code">The portal's reason for a refusal (409: not_yours, duplicate), or null.</param>
-/// <param name="Order">The guids an order from the game came to, once they're known (to keep for another try).</param>
 public sealed record CharacterOrderResult(CharacterOrderOutcome Outcome, string Message,
-    IReadOnlyList<OrderedCharacter>? Characters = null, string? Code = null, IReadOnlyList<uint>? Order = null);
+    IReadOnlyList<OrderedCharacter>? Characters = null, string? Code = null);
 
 /// <summary>
 /// Evermore fork: the order of the account's characters on the realm's character select screen (the
@@ -64,7 +67,7 @@ public sealed class CharacterOrderService
     /// "portalkeeper:" value), and the realm's login screen neither shows nor clears an order.
     /// </summary>
     public const string ConfigSetting = "accountList";
-    /// <summary>An order in accountList: "evermoreorder:ACCOUNT:COUNT:p1,p2,...".</summary>
+    /// <summary>An order in accountList: "evermoreorder:ACCOUNT:COUNT:HASH:p1,p2,...".</summary>
     public const string OrderPrefix = "evermoreorder:";
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
@@ -165,86 +168,69 @@ public sealed class CharacterOrderService
     }
 
     /// <summary>
-    /// Sends an order left by the character select screen: <paramref name="order"/>'s positions mapped
-    /// to the guids in the realm's list (the same list, in the same order, as the game's). Stale when
-    /// the list doesn't fit it any more; Unavailable on a realm without character order. Once the
-    /// guids are known the result names them (<see cref="CharacterOrderResult.Order"/>).
+    /// The order in an accountList value the character select screen left, whoever's it is
+    /// ("evermoreorder:ACCOUNT:COUNT:HASH:p1,p2,..."). Null when it isn't one: empty, a login handoff,
+    /// no account, no positions, or positions that can't be (twice, or outside 1..COUNT).
     /// </summary>
-    public async Task<CharacterOrderResult> SendPendingAsync(LauncherSession session, PendingCharacterPositions order,
-        CancellationToken cancellationToken = default)
+    public static PendingCharacterPositions? ParseOrder(string? value)
     {
-        IReadOnlyList<OrderedCharacter>? characters;
-        try { characters = await GetCharactersAsync(session, cancellationToken); }
-        catch (LauncherApiException ex) when (ex.Status == HttpStatusCode.Unauthorized)
-        {
-            return new CharacterOrderResult(CharacterOrderOutcome.LoggedOut, ex.Message);
-        }
-        catch (Exception ex) when (ex is LauncherApiException or HttpRequestException or JsonException or InvalidDataException
-            or NotSupportedException || (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
-        {
-            return new CharacterOrderResult(CharacterOrderOutcome.NotTried, UserErrorService.Format(ex, "Couldn't ask for the character list"));
-        }
-        if (characters is null) return new CharacterOrderResult(CharacterOrderOutcome.Unavailable, "This realm doesn't keep a character order.");
-        var guids = GuidsFor(order, characters);
-        if (guids is null)
-            return new CharacterOrderResult(CharacterOrderOutcome.Stale,
-                "The order from the game doesn't fit your characters any more (one was made or deleted since).", characters);
-        return await SaveAsync(session, guids, cancellationToken) with { Order = guids };
-    }
-
-    /// <summary>
-    /// The order in an accountList value the character select screen left for <paramref name="account"/>
-    /// ("evermoreorder:ACCOUNT:COUNT:p1,p2,..."; the account is compared without case). Null when
-    /// there's nothing for this account: empty, a login handoff, another account's, no positions, or
-    /// positions that can't be (twice, or outside 1..COUNT).
-    /// </summary>
-    public static PendingCharacterPositions? ParsePending(string? value, string? account)
-    {
-        if (string.IsNullOrEmpty(value) || string.IsNullOrWhiteSpace(account) || !value.StartsWith(OrderPrefix, StringComparison.Ordinal)) return null;
+        if (string.IsNullOrEmpty(value) || !value.StartsWith(OrderPrefix, StringComparison.Ordinal)) return null;
         var parts = value[OrderPrefix.Length..].Split(':');
-        if (parts.Length != 3 || !string.Equals(parts[0].Trim(), account.Trim(), StringComparison.OrdinalIgnoreCase)) return null;
-        if (!int.TryParse(parts[1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var count)
-            || count < 1 || count > 255)
+        if (parts.Length != 4 || parts[0].Trim().Length == 0) return null;
+        if (!int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var count) || count < 1 || count > 255) return null;
+        if (parts[2].Length is < 1 or > 8 || !uint.TryParse(parts[2], NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var hash))
             return null;
         var positions = new List<int>();
-        foreach (var text in parts[2].Split(',', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var text in parts[3].Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
-            if (!int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var position)
+            if (!int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var position)
                 || position < 1 || position > count || positions.Contains(position))
                 return null;
             positions.Add(position);
         }
-        return positions.Count == 0 ? null : new PendingCharacterPositions(count, positions);
+        return positions.Count == 0 ? null : new PendingCharacterPositions(parts[0].Trim(), count, hash, positions);
     }
 
     /// <summary>
+    /// The order in an accountList value when it's <paramref name="account"/>'s (compared without case),
+    /// else null (see <see cref="ParseOrder"/>).
+    /// </summary>
+    public static PendingCharacterPositions? ParsePending(string? value, string? account) =>
+        ParseOrder(value) is { } order && !string.IsNullOrWhiteSpace(account)
+            && string.Equals(order.Account, account.Trim(), StringComparison.OrdinalIgnoreCase)
+            ? order : null;
+
+    /// <summary>
+    /// The character select screen's hash of a list (its ListHash): every name's UTF-8 bytes and a
+    /// newline, folded as h = (h * 31 + b) mod 2^24 from 0. An order carries the hash of the list it
+    /// was made against, so it's never applied to another one (a tie in the order, a character
+    /// deleted and another made, or an order the realm already has).
+    /// </summary>
+    public static uint ListHash(IEnumerable<string> names)
+    {
+        uint hash = 0;
+        foreach (var name in names)
+        {
+            foreach (var b in Encoding.UTF8.GetBytes(name)) hash = (hash * 31 + b) % 16777216;
+            hash = (hash * 31 + 10) % 16777216;
+        }
+        return hash;
+    }
+
+    /// <summary>The hash as the character select screen writes it: six lower-case hex digits.</summary>
+    public static string FormatHash(uint hash) => hash.ToString("x6", CultureInfo.InvariantCulture);
+
+    /// <summary>
     /// The guids at <paramref name="order"/>'s positions in the realm's list, in that order. Null when
-    /// the list isn't the one the order was made from (another length) or a position doesn't fit.
+    /// the list isn't the one the order was made from (another length or another hash) or a position
+    /// doesn't fit.
     /// </summary>
     public static IReadOnlyList<uint>? GuidsFor(PendingCharacterPositions order, IReadOnlyList<OrderedCharacter> characters)
     {
         if (characters.Count != order.Count || order.Positions.Count == 0) return null;
+        if (ListHash(characters.Select(c => c.Name)) != order.Hash) return null;
         if (order.Positions.Any(p => p < 1 || p > characters.Count) || order.Positions.Distinct().Count() != order.Positions.Count) return null;
         return order.Positions.Select(p => characters[p - 1].Guid).ToArray();
-    }
-
-    /// <summary>
-    /// What to send for <paramref name="account"/>: an order in Config.wtf (<paramref name="fromConfig"/>),
-    /// being newer, wins over the launcher's unsent copy (<paramref name="kept"/>), which only counts
-    /// when it's this account's. Null when there's neither.
-    /// </summary>
-    public static PendingCharacterOrder? PendingOrder(PendingCharacterPositions? fromConfig, PendingCharacterOrder? kept, string? account)
-    {
-        if (string.IsNullOrWhiteSpace(account)) return null;
-        if (fromConfig is not null)
-            return new PendingCharacterOrder { Account = account.Trim(), Count = fromConfig.Count, Positions = fromConfig.Positions.ToList() };
-        if (kept is null || !string.Equals((kept.Account ?? "").Trim(), account.Trim(), StringComparison.OrdinalIgnoreCase)) return null;
-        var guids = (kept.Guids ?? []).Where(g => g > 0).Distinct().ToList();
-        if (guids.Count > 0) return new PendingCharacterOrder { Account = kept.Account!.Trim(), Guids = guids };
-        var positions = kept.Positions ?? [];
-        return kept.Count > 0 && positions.Count > 0
-            ? new PendingCharacterOrder { Account = kept.Account!.Trim(), Count = kept.Count, Positions = positions.ToList() }
-            : null;
     }
 
     /// <summary>The portal's message for a refusal, or one for its code when it sent none.</summary>

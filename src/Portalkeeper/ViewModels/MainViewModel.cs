@@ -534,6 +534,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
             _isLaunching = value;
             OnPropertyChanged();
+            _characters?.SetGameRunning(_isGameRunning || value);
             NotifyInstallChanged();
             OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
             OnPropertyChanged(nameof(EnterRealmButtonText));
@@ -564,7 +565,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
             _isGameRunning = value;
             OnPropertyChanged();
-            _characters?.SetGameRunning(value);
+            _characters?.SetGameRunning(value || _isLaunching);
             NotifyInstallChanged();
             OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
             OnPropertyChanged(nameof(EnterRealmButtonText));
@@ -645,7 +646,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             var unsatisfied = currentAddons.Where(a => a.Definition.Required && (!a.IsInstalled || a.IsUpdateAvailable)).ToArray();
             if (unsatisfied.Length > 0) throw new InvalidOperationException("Required addons need attention: " + string.Join(", ", unsatisfied.Select(a => a.Definition.Name)));
             PrepareCombatLogsForLaunch();
-            // An order the character select screen left last time; a slow portal doesn't hold the launch.
+            // An order the character select screen left last time, read before the login handoff writes
+            // accountList; a slow portal doesn't hold the launch, and it never throws.
             await SendPendingCharacterOrderAsync(afterGame: false, PendingOrderLaunchWait);
             DismissCrash();
             SetRepairStatus("");

@@ -293,6 +293,17 @@ public sealed class RealmLaunchService
     public static string WithoutGamePassword(string config) =>
         GamePasswordLine.Replace(config, match => match.Groups[1].Value + "\"\"");
 
+    private static readonly Regex CharacterOrderLine = new(
+        @"^([ \t]*SET[ \t]+accountList[ \t]+)""" + Regex.Escape(CharacterOrderService.OrderPrefix) + @"[^\r\n]*",
+        RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Config.wtf text with what the launcher puts into or takes out of accountList blanked: a game
+    /// password, and an order the character select screen left. A change only there needs no backup.
+    /// </summary>
+    internal static string WithoutLauncherValues(string config) =>
+        CharacterOrderLine.Replace(WithoutGamePassword(config), match => match.Groups[1].Value + "\"\"");
+
     /// <summary>
     /// Blanks a game password the launcher left in Config.wtf, for when the game exited without the
     /// login patch taking it (a crash before the login screen, or the patch missing).
@@ -385,7 +396,7 @@ public sealed class RealmLaunchService
             ?? throw new InvalidOperationException("Unable to determine the WoW configuration directory.");
         Directory.CreateDirectory(directory);
         // Handing over the password changes Config.wtf on every launch; only other changes are backed up.
-        if (exists && !string.Equals(WithoutGamePassword(current), WithoutGamePassword(updated), StringComparison.Ordinal))
+        if (exists && !string.Equals(WithoutLauncherValues(current), WithoutLauncherValues(updated), StringComparison.Ordinal))
         {
             var backupDirectory = Path.Combine(clientDirectory, ".portalkeeper", "backups", "config");
             Directory.CreateDirectory(backupDirectory);
@@ -397,9 +408,19 @@ public sealed class RealmLaunchService
         WriteConfig(configPath, updated, encoding);
     }
 
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+
     private static (string Text, Encoding Encoding) ReadConfig(string configPath)
     {
         var bytes = File.ReadAllBytes(configPath);
+        var bom = bytes is [0xEF, 0xBB, 0xBF, ..] or [0xFF, 0xFE, ..] or [0xFE, 0xFF, ..];
+        if (!bom)
+        {
+            // Not UTF-8 (a Latin-1 "Café" from another tool): read and write it byte for byte, so the
+            // lines the launcher doesn't touch keep their bytes.
+            try { return (StrictUtf8.GetString(bytes), new UTF8Encoding(false)); }
+            catch (DecoderFallbackException) { return (Encoding.Latin1.GetString(bytes), Encoding.Latin1); }
+        }
         using var reader = new StreamReader(new MemoryStream(bytes), Encoding.UTF8, true);
         var text = reader.ReadToEnd();
         var encoding = reader.CurrentEncoding;
