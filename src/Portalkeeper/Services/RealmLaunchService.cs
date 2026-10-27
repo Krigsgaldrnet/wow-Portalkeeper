@@ -107,7 +107,7 @@ public sealed class RealmLaunchService
             ManagedPath.Resolve(fullClientDirectory, ".portalkeeper/backups/config");
         }
         WriteRealmlist(realmlistPath, realm.Address, fullClientDirectory);
-        var settings = new List<(string Name, string Value)>();
+        var settings = new List<(string Name, string Value)>(ClientSettings);
         if (!string.IsNullOrWhiteSpace(realm.GameRealmName))
         {
             if (!IsConfigValue(realm.GameRealmName))
@@ -126,8 +126,7 @@ public sealed class RealmLaunchService
                     settings.Add((agreement, "1"));
             }
         }
-        if (settings.Count > 0)
-            WriteConfigSettings(Path.Combine(fullClientDirectory, "WTF", "Config.wtf"), settings, fullClientDirectory);
+        WriteConfigSettings(Path.Combine(fullClientDirectory, "WTF", "Config.wtf"), settings, fullClientDirectory);
         var process = LaunchWow(wowExecutable, fullClientDirectory, sourceClientDirectory, realm.Client.Executable);
 
         return new RealmLaunchResult
@@ -285,6 +284,12 @@ public sealed class RealmLaunchService
     private static readonly string[] AgreementSettings =
         { "readEULA", "readTOS", "readTerminationWithoutNotice", "readScanning", "readContest" };
 
+    // Game options the realm's addons rely on, put back on every launch: a lost or reset Config.wtf
+    // turns both off without a word. checkAddonVersion = "Load out of date AddOns" unticked;
+    // showQuestTrackingTooltips = quest progress lines on mob tooltips, which DragonUI's quest icons read.
+    internal static readonly (string Name, string Value)[] ClientSettings =
+        { ("checkAddonVersion", "0"), ("showQuestTrackingTooltips", "1") };
+
     private static readonly Regex GamePasswordLine = new(
         @"^([ \t]*SET[ \t]+accountList[ \t]+)""" + Regex.Escape(GamePasswordPrefix) + @"[^\r\n]*",
         RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
@@ -363,7 +368,7 @@ public sealed class RealmLaunchService
     private static bool IsConfigValue(string value) =>
         !value.Any(char.IsControl) && !value.Contains('"') && !value.Contains('\\');
 
-    private static void WriteConfigSettings(string configPath, IReadOnlyList<(string Name, string Value)> settings, string clientDirectory)
+    internal static void WriteConfigSettings(string configPath, IReadOnlyList<(string Name, string Value)> settings, string clientDirectory)
     {
         var exists = File.Exists(configPath);
         var (current, encoding) = exists ? ReadConfig(configPath) : (string.Empty, new UTF8Encoding(false));

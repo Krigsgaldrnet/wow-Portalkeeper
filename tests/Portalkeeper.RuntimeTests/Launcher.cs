@@ -105,6 +105,24 @@ internal static partial class Program
             RealmLaunchService.ForgetGamePassword(Path.Combine(root, "no-such-client"));
             Check("forgetting without a Config.wtf does nothing", true);
 
+            // Out of date addons load and mob tooltips show quest progress, whatever reset Config.wtf.
+            File.WriteAllText(wtf, "SET locale \"enUS\"\r\nSET checkAddonVersion \"1\"\r\n");
+            RealmLaunchService.WriteConfigSettings(wtf, RealmLaunchService.ClientSettings, wtfClient);
+            var kept = File.ReadAllText(wtf);
+            Check("out of date addons are turned back on", kept.Contains("SET checkAddonVersion \"0\"\r\n", StringComparison.Ordinal)
+                && !kept.Contains("checkAddonVersion \"1\"", StringComparison.Ordinal));
+            Check("quest tooltips are added when missing", kept.EndsWith("SET showQuestTrackingTooltips \"1\"\r\n", StringComparison.Ordinal)
+                && kept.StartsWith("SET locale \"enUS\"\r\n", StringComparison.Ordinal));
+            var backups = Path.Combine(wtfClient, ".portalkeeper", "backups", "config");
+            var backupCount = Directory.Exists(backups) ? Directory.GetFiles(backups).Length : 0;
+            RealmLaunchService.WriteConfigSettings(wtf, RealmLaunchService.ClientSettings, wtfClient);
+            Check("settings already in place leave Config.wtf and its backups alone", File.ReadAllText(wtf) == kept
+                && (Directory.Exists(backups) ? Directory.GetFiles(backups).Length : 0) == backupCount);
+            var fresh = Path.Combine(root, "wtf-fresh");
+            RealmLaunchService.WriteConfigSettings(Path.Combine(fresh, "WTF", "Config.wtf"), RealmLaunchService.ClientSettings, fresh);
+            Check("a client without Config.wtf gets both settings", File.ReadAllText(Path.Combine(fresh, "WTF", "Config.wtf"))
+                .Contains("SET showQuestTrackingTooltips \"1\"", StringComparison.Ordinal));
+
             // Client files the realm dropped from its client torrent (TheraWoW's login screen).
             var removeClient = Path.Combine(root, "remove", "WoW");
             Directory.CreateDirectory(Path.Combine(removeClient, "Data", "enUS"));
