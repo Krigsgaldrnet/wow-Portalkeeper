@@ -6,8 +6,8 @@
              x:DataType="vm:MainViewModel">
 
     <!-- Evermore fork: the CHARACTERS page. The account's characters in the order the character select
-         screen shows them; drag a row, move the picked one, or sort, then SAVE. Its view model
-         (Characters) lives while the player is logged in (MainViewModel.Characters.cs). -->
+         screen shows them, favourites (stars) first; drag a row, move the picked one, sort, or star one,
+         then SAVE. Its view model (Characters) lives while the player is logged in (MainViewModel.Characters.cs). -->
     <UserControl.Styles>
         <Style Selector="ListBox.order">
             <Setter Property="Background" Value="Transparent" />
@@ -44,6 +44,12 @@
             <Setter Property="BorderThickness" Value="2" />
         </Style>
 
+        <Style Selector="Button.star">
+            <Setter Property="Padding" Value="2,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
         <Style Selector="Button.sort">
             <Setter Property="Padding" Value="10,5" />
             <Setter Property="FontSize" Value="11.5" />
@@ -65,7 +71,7 @@
 
         <!-- Header: REVERT / SAVE -->
         <views:PageBanner Grid.Row="0" Title="CHARACTERS"
-                          Subtitle="The order your characters show in on the character select screen.">
+                          Subtitle="The order your characters show in on the character select screen. Starred ones come first and stand in your camp.">
             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" IsVisible="{Binding HasCharacters}">
                 <Button Content="REVERT" Click="Revert_Click" IsEnabled="{Binding CanRevert}" Padding="12,8"
                         ToolTip.Tip="Back to the order the realm has" />
@@ -112,24 +118,31 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:CharacterOrderRowView">
                                 <Border Classes="row" Classes.drop="{Binding IsDropTarget}">
-                                    <Grid ColumnDefinitions="Auto,34,*,70,160,14" ColumnSpacing="10">
+                                    <Grid ColumnDefinitions="Auto,Auto,34,*,70,160,14" ColumnSpacing="10">
                                         <!-- Grip: the row can be dragged anywhere; this says so -->
                                         <Path Width="8" Height="16" Stretch="Uniform" Fill="#75694E" VerticalAlignment="Center"
                                               Data="M 0,0 H 3 V 3 H 0 Z M 5,0 H 8 V 3 H 5 Z M 0,6.5 H 3 V 9.5 H 0 Z M 5,6.5 H 8 V 9.5 H 5 Z M 0,13 H 3 V 16 H 0 Z M 5,13 H 8 V 16 H 5 Z" />
-                                        <TextBlock Grid.Column="1" Classes="serif" Text="{Binding PositionText}" FontSize="15" FontWeight="Bold"
+                                        <!-- Favourite: first on the character select screen and in the camp -->
+                                        <Button Grid.Column="1" Classes="plain star" Click="Star_Click" ToolTip.Tip="{Binding StarTip}">
+                                            <Panel>
+                                                <TextBlock Text="★" FontSize="18" Foreground="#F6D477" IsVisible="{Binding IsFavourite}" />
+                                                <TextBlock Text="☆" FontSize="18" Foreground="#75694E" IsVisible="{Binding !IsFavourite}" />
+                                            </Panel>
+                                        </Button>
+                                        <TextBlock Grid.Column="2" Classes="serif" Text="{Binding PositionText}" FontSize="15" FontWeight="Bold"
                                                    Foreground="#C9A27A" VerticalAlignment="Center" HorizontalAlignment="Right" />
-                                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="1">
+                                        <StackPanel Grid.Column="3" VerticalAlignment="Center" Spacing="1">
                                             <TextBlock Text="{Binding Name}" Foreground="{Binding ClassBrush}" FontWeight="SemiBold" FontSize="14"
                                                        TextTrimming="CharacterEllipsis" />
                                             <TextBlock Text="{Binding Detail}" Foreground="#AFA28D" FontSize="11.5" TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
-                                        <StackPanel Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                        <StackPanel Grid.Column="4" VerticalAlignment="Center" HorizontalAlignment="Center">
                                             <TextBlock Text="LEVEL" FontSize="9" Foreground="#8C8273" HorizontalAlignment="Center" />
                                             <TextBlock Text="{Binding LevelText}" FontSize="16" FontWeight="Bold" Foreground="#F6D477" HorizontalAlignment="Center" />
                                         </StackPanel>
-                                        <TextBlock Grid.Column="4" Text="{Binding LastPlayedText}" Foreground="#AFA28D" FontSize="11.5"
+                                        <TextBlock Grid.Column="5" Text="{Binding LastPlayedText}" Foreground="#AFA28D" FontSize="11.5"
                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                        <Ellipse Grid.Column="5" Width="8" Height="8" Fill="#5CD65C" VerticalAlignment="Center"
+                                        <Ellipse Grid.Column="6" Width="8" Height="8" Fill="#5CD65C" VerticalAlignment="Center"
                                                  IsVisible="{Binding Online}" ToolTip.Tip="In the game now" />
                                     </Grid>
                                 </Border>

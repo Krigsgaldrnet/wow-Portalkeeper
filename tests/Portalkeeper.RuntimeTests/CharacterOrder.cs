@@ -207,6 +207,21 @@ internal static partial class Program
             && CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:2,2") is null
             && CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:2,x") is null
             && CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:-1") is null);
+        check("char order: the four-part value says nothing about favourites",
+            CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:4,1") is { Favourites: null });
+        check("char order: a fifth part is how many of the first positions are favourites",
+            CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:4,1,3,2:2") is { Favourites: 2 } starred
+            && starred.Positions.SequenceEqual([4, 1, 3, 2])
+            && CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:4,1,3,2:0") is { Favourites: 0 }
+            && CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:4,1,3,2:4") is { Favourites: 4 });
+        check("char order: favourites past the positions given are all of them, as the screen reads it",
+            CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:4,1:3") is { Favourites: 2 });
+        check("char order: a favourites count past COUNT, not a number, empty, or a sixth part: nothing pending",
+            CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:4,1:5") is null
+            && CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:4,1:x") is null
+            && CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:4,1:-1") is null
+            && CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:4,1:") is null
+            && CharacterOrderService.ParseOrder($"evermoreorder:ALICE:4:{hash}:4,1:1:1") is null);
         check("char order: no count, a bad hash, no positions, no account: nothing pending",
             CharacterOrderService.ParseOrder($"evermoreorder:ALICE:0:{hash}:") is null
             && CharacterOrderService.ParseOrder("evermoreorder:ALICE:4:zzzzzz:1") is null
@@ -254,6 +269,19 @@ internal static partial class Program
             && portal.LastSaveContentType == "application/json"
             && portal.LastSave?.GetProperty("order").EnumerateArray().Select(e => e.GetUInt32()).SequenceEqual([16u, 12u]) == true
             && saved.Characters is { Count: 4 });
+        check("char order: a save without favourites doesn't send them (the realm keeps its own)",
+            portal.LastSave?.TryGetProperty("favourites", out _) == false);
+        await Service(portal).SaveAsync(session, [16u, 12u], [16u, 16u]);
+        check("char order: a save with favourites sends them once each",
+            portal.LastSave?.GetProperty("favourites").EnumerateArray().Select(e => e.GetUInt32()).SequenceEqual([16u]) == true);
+        await Service(portal).SaveAsync(session, [16u, 12u], []);
+        check("char order: no favourites is an empty list, which clears them",
+            portal.LastSave?.GetProperty("favourites").GetArrayLength() == 0);
+        check("char order: a list without favourites (an older portal) reads none", list!.All(c => !c.Favourite));
+        portal.ListJson = CharacterListJson.Replace("\"order\":1}", "\"order\":1,\"favourite\":true}");
+        check("char order: a character's favourite is read",
+            (await Service(portal).GetCharactersAsync(session))?.Select(c => c.Favourite).SequenceEqual([false, true, false, false]) == true);
+        portal.ListJson = CharacterListJson;
 
         async Task<CharacterOrderResult> SaveWith(int status, string json)
         {
@@ -307,6 +335,21 @@ internal static partial class Program
         check("char order sync: the game's order is sent as guids and accountList emptied",
             sent?.Outcome == CharacterOrderOutcome.Saved && Posted(portal).SequenceEqual([16u, 14u]) && AccountList() == ""
             && sync.Waiting("alice") is null && settingsSaves > 0);
+
+        SetAccountList(AliceOrder("4,2,1:2"));
+        sent = await sync.SyncAsync(session, syncClient, Always);
+        check("char order sync: favourites in the game's order are sent as the first guids",
+            sent?.Outcome == CharacterOrderOutcome.Saved && Posted(portal).SequenceEqual([16u, 14u, 12u])
+            && portal.LastSave?.GetProperty("favourites").EnumerateArray().Select(e => e.GetUInt32()).SequenceEqual([16u, 14u]) == true
+            && AccountList() == "");
+        SetAccountList(AliceOrder("4,2:0"));
+        sent = await sync.SyncAsync(session, syncClient, Always);
+        check("char order sync: no favourites in the game's order clears the realm's",
+            sent?.Outcome == CharacterOrderOutcome.Saved && portal.LastSave?.GetProperty("favourites").GetArrayLength() == 0);
+        SetAccountList(AliceOrder("4,2"));
+        sent = await sync.SyncAsync(session, syncClient, Always);
+        check("char order sync: an order without the favourites part leaves the realm's alone",
+            sent?.Outcome == CharacterOrderOutcome.Saved && portal.LastSave?.TryGetProperty("favourites", out _) == false);
 
         // Out of time during the POST: the guids are kept, accountList is already empty.
         portal = new FakeCharacterPortal { HoldSave = new TaskCompletionSource() };
@@ -381,7 +424,7 @@ internal static partial class Program
         SetAccountList(AliceOrder("2,3"));
         var afterGame = sync.SyncAsync(session, syncClient, Always);
         await portal.SaveArrived.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        var pageSave = sync.SavePageOrderAsync(session, [15u, 16u, 12u, 14u], syncClient, Always);
+        var pageSave = sync.SavePageOrderAsync(session, [15u, 16u, 12u, 14u], null, syncClient, Always);
         check("char order sync: a page save waits for the game's order on its way", !pageSave.IsCompleted && portal.Saves == 1);
         portal.HoldSave.SetResult();
         var overtaken = await afterGame;
@@ -450,22 +493,25 @@ internal static partial class Program
         portal.SaveStatus = 503;
         portal.SaveJson = """{"error":"Character ordering isn't available right now."}""";
         check("char order sync: a page save the realm didn't take keeps the waiting order",
-            (await sync.SavePageOrderAsync(session, [12u], syncClient, Always)).Outcome == CharacterOrderOutcome.NotTried
+            (await sync.SavePageOrderAsync(session, [12u], null, syncClient, Always)).Outcome == CharacterOrderOutcome.NotTried
             && sync.Waiting("ALICE") is not null && AccountList() == AliceOrder("1"));
         portal.SaveStatus = 200;
         portal.SaveJson = CharacterListJson;
         check("char order sync: a page save drops the waiting order and the account's accountList",
-            (await sync.SavePageOrderAsync(session, [12u], syncClient, Always)).Outcome == CharacterOrderOutcome.Saved
+            (await sync.SavePageOrderAsync(session, [12u], null, syncClient, Always)).Outcome == CharacterOrderOutcome.Saved
             && sync.Waiting("ALICE") is null && AccountList() == "");
         File.WriteAllText(syncConfig, "SET accountList \"portalkeeper:hunter2\"\r\n");
-        await sync.SavePageOrderAsync(session, [12u], syncClient, Always);
+        await sync.SavePageOrderAsync(session, [12u], null, syncClient, Always);
         check("char order sync: a page save never touches a login handoff", AccountList() == "portalkeeper:hunter2");
         var reloaded = new SettingsService(Path.Combine(root, "charorder-settings2", "settings.json"));
         var kept = reloaded.Load();
         kept.PendingCharacterOrders["ALICE"] = new PendingCharacterOrder { SourceValue = AliceOrder("2"), Guids = [14] };
+        kept.PendingCharacterOrders["BOB"] = new PendingCharacterOrder { SourceValue = AliceOrder("2,1:1"), Guids = [14, 12], FavouriteGuids = [14] };
         reloaded.Save(kept);
-        check("char order sync: a waiting order survives a restart",
-            reloaded.Load().PendingCharacterOrders.GetValueOrDefault("ALICE") is { } back && back.Guids.SequenceEqual([14u]) && back.SourceValue == AliceOrder("2"));
+        check("char order sync: a waiting order survives a restart, with its favourites or without",
+            reloaded.Load().PendingCharacterOrders is var back
+            && back.GetValueOrDefault("ALICE") is { FavouriteGuids: null } alice && alice.Guids.SequenceEqual([14u]) && alice.SourceValue == AliceOrder("2")
+            && back.GetValueOrDefault("BOB")?.FavouriteGuids?.SequenceEqual([14u]) == true);
 
         // The page.
         portal = new FakeCharacterPortal();
@@ -506,7 +552,7 @@ internal static partial class Program
         portal.SaveJson = CharacterListJson.Replace("""{"guid":16,"name":"Zaph","race":10,"class":8,"gender":1,"level":70,"lastPlayed":0,"online":false,"order":null},""", "")
             .Replace("""{"characters":[""", """{"characters":[{"guid":16,"name":"Zaph","race":10,"class":8,"gender":1,"level":70,"lastPlayed":0,"online":false,"order":0},""");
         var pageSaves = 0;
-        page = new CharactersViewModel(Service(portal), session, save: (guids, token) => { pageSaves++; return Service(portal).SaveAsync(session, guids, token); });
+        page = new CharactersViewModel(Service(portal), session, save: (guids, favourites, token) => { pageSaves++; return Service(portal).SaveAsync(session, guids, favourites, token); });
         await page.LoadAsync();
         page.Sort(CharacterSort.Level);
         await page.SaveAsync();
@@ -522,6 +568,71 @@ internal static partial class Program
         check("char order page: a refusal is shown and the draft stays", page is { StatusIsError: true, HasUnsavedChanges: true }
             && page.StatusMessage.StartsWith("That isn't one of your characters any more.", StringComparison.Ordinal)
             && Order() == "Oldhc,Zaph,Pawster,Ironhide");
+
+        // Favourites on the page: first, like the character select screen.
+        var starPortal = new FakeCharacterPortal
+        {
+            ListJson = CharacterListJson.Replace("\"order\":null}", "\"order\":null,\"favourite\":true}"),
+        };
+        var starPage = new CharactersViewModel(Service(starPortal), session);
+        await starPage.LoadAsync();
+        string Stars() => string.Join(",", starPage.Characters.Select(c => (c.IsFavourite ? "*" : "") + c.Name));
+        check("char order page: the realm's favourites show first, as the screen shows them, nothing to save",
+            Stars() == "*Oldhc,*Zaph,Pawster,Ironhide" && starPage.FavouriteCount == 2 && !starPage.HasUnsavedChanges);
+        starPage.ToggleFavourite(starPage.Characters[3]);
+        check("char order page: starring puts it last of the favourites", Stars() == "*Oldhc,*Zaph,*Ironhide,Pawster"
+            && starPage.HasUnsavedChanges && starPage.SelectedCharacter?.Name == "Ironhide");
+        starPage.ToggleFavourite(starPage.Characters[0]);
+        check("char order page: unstarring puts it right under them", Stars() == "*Zaph,*Ironhide,Oldhc,Pawster");
+        starPage.Move(starPage.Characters[3], 0);
+        check("char order page: a row dropped among the favourites is one", Stars() == "*Pawster,*Zaph,*Ironhide,Oldhc");
+        starPage.Move(starPage.Characters[0], 3);
+        check("char order page: one dropped under them isn't", Stars() == "*Zaph,*Ironhide,Oldhc,Pawster");
+        starPage.SelectedCharacter = starPage.Characters[1];
+        starPage.MoveDown();
+        check("char order page: a step down from the last favourite only crosses the line (unstars)", Stars() == "*Zaph,Ironhide,Oldhc,Pawster");
+        starPage.MoveUp();
+        check("char order page: a step up from under the line only crosses it (stars)", Stars() == "*Zaph,*Ironhide,Oldhc,Pawster");
+        starPage.Sort(CharacterSort.Name);
+        check("char order page: a sort keeps the favourites on top", Stars() == "*Ironhide,*Zaph,Oldhc,Pawster");
+        starPage.Revert();
+        check("char order page: revert brings back the realm's order and stars", Stars() == "*Oldhc,*Zaph,Pawster,Ironhide" && !starPage.HasUnsavedChanges);
+        starPage.ToggleFavourite(starPage.Characters[1]);
+        starPage.ToggleFavourite(starPage.Characters[1]);
+        check("char order page: unstar and star again, same place: nothing to save", Stars() == "*Oldhc,*Zaph,Pawster,Ironhide" && !starPage.HasUnsavedChanges);
+        starPage.SelectedCharacter = starPage.Characters[1];
+        starPage.MoveDown();
+        check("char order page: a star alone is a change", Stars() == "*Oldhc,Zaph,Pawster,Ironhide" && starPage is { HasUnsavedChanges: true, CanSave: true });
+        starPortal.SaveJson = starPortal.ListJson.Replace("\"name\":\"Zaph\",\"race\":10,\"class\":8,\"gender\":1,\"level\":70,\"lastPlayed\":0,\"online\":false,\"order\":null,\"favourite\":true",
+            "\"name\":\"Zaph\",\"race\":10,\"class\":8,\"gender\":1,\"level\":70,\"lastPlayed\":0,\"online\":false,\"order\":null");
+        await starPage.SaveAsync();
+        check("char order page: SAVE sends the order and the favourites",
+            starPortal.LastSave?.GetProperty("order").EnumerateArray().Select(e => e.GetUInt32()).SequenceEqual([15u, 16u, 12u, 14u]) == true
+            && starPortal.LastSave?.GetProperty("favourites").EnumerateArray().Select(e => e.GetUInt32()).SequenceEqual([15u]) == true
+            && !starPage.HasUnsavedChanges);
+        starPage.ToggleFavourite(starPage.Characters[1]);
+        await starPage.SaveAsync();
+        check("char order page: stars the realm didn't keep (an older core) are said, not called saved",
+            starPage is { StatusIsError: true, HasUnsavedChanges: false } && starPage.StatusMessage.Contains("favourites", StringComparison.Ordinal)
+            && Stars() == "*Oldhc,Pawster,Ironhide,Zaph");
+        starPage.SetGameRunning(true);
+        check("char order page: no starring while the game runs", !starPage.CanStar && !starPage.ToggleFavourite(starPage.Characters[2]));
+        starPage.Dispose();
+
+        var onePortal = new FakeCharacterPortal
+        {
+            ListJson = """{"characters":[{"guid":12,"name":"Pawster","race":1,"class":1,"gender":0,"level":60,"lastPlayed":0,"online":false,"order":0}]}""",
+        };
+        onePortal.SaveJson = onePortal.ListJson.Replace("\"order\":0}", "\"order\":0,\"favourite\":true}");
+        var onePage = new CharactersViewModel(Service(onePortal), session);
+        await onePage.LoadAsync();
+        onePage.ToggleFavourite(onePage.Characters[0]);
+        check("char order page: one character can't move but can be starred and saved", onePage is { CanEdit: false, CanSave: true });
+        await onePage.SaveAsync();
+        check("char order page: and the star is saved",
+            onePortal.LastSave?.GetProperty("favourites").EnumerateArray().Select(e => e.GetUInt32()).SequenceEqual([12u]) == true
+            && onePage is { HasUnsavedChanges: false, StatusIsError: false });
+        onePage.Dispose();
 
         portal.Status = 404;
         var gone = false;

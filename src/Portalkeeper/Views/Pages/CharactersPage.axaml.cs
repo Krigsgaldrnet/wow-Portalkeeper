@@ -12,7 +12,7 @@ namespace Portalkeeper.Views;
 /// <summary>
 /// The CHARACTERS page of the main window; its content is the Characters view model of the
 /// MainViewModel it's bound to. A row is dragged onto another to take its place (the rows between
-/// shift over); Ctrl+Up / Ctrl+Down move the picked one, Ctrl+S saves.
+/// shift over); Ctrl+Up / Ctrl+Down move the picked one, Ctrl+S saves. A row's star stars or unstars it.
 /// </summary>
 public partial class CharactersPage : UserControl
 {
@@ -162,6 +162,13 @@ public partial class CharactersPage : UserControl
     {
         if (ViewModel is not { } vm) return;
         vm.MoveDown();
+        ShowPicked(vm);
+    }
+
+    private void Star_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || (sender as Control)?.DataContext is not CharacterOrderRowView row) return;
+        vm.ToggleFavourite(row);
         ShowPicked(vm);
     }
 

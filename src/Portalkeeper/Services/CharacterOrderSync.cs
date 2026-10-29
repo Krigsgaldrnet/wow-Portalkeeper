@@ -13,8 +13,9 @@ namespace Portalkeeper.Services;
 
 /// <summary>
 /// Evermore fork: sends the orders the game's character select screen leaves in Config.wtf's
-/// accountList ("evermoreorder:ACCOUNT:COUNT:HASH:p1,p2,...") to the realm, before a launch and after
-/// the game exits.
+/// accountList ("evermoreorder:ACCOUNT:COUNT:HASH:p1,p2,...:FAVOURITES") to the realm, before a launch
+/// and after the game exits. The favourites are the first FAVOURITES of the order's guids; a value
+/// without that part (an older screen) leaves the realm's favourites as they are.
 ///
 /// Positions only mean something against the list they were made from, and sending them twice
 /// would scramble an order the realm already applied. So a value is kept in the settings the moment
@@ -119,6 +120,7 @@ public sealed class CharacterOrderSync
                     "The order from the game was made against another character list; it was dropped.", list);
             }
             pending.Guids = guids.ToList();
+            pending.FavouriteGuids = order.Favourites is { } starred ? guids.Take(starred).ToList() : null;
             Save();
         }
 
@@ -126,7 +128,7 @@ public sealed class CharacterOrderSync
         await ClearAsync(clientDirectory, pending.SourceValue, mayWriteConfig);
         if (generation != _generation) return null;
 
-        var result = await _service.SaveAsync(session, pending.Guids, cancellationToken);
+        var result = await _service.SaveAsync(session, pending.Guids, pending.FavouriteGuids, cancellationToken);
         if (generation != _generation) return null;
         if (result.Outcome == CharacterOrderOutcome.Refused || result.Code == CharacterOrderService.BadRequestCode)
             Trace.WriteLine($"Portalkeeper: the realm refused the character order from the game for {account} ({result.Code ?? "no code"}: {result.Message}); dropped.");
@@ -136,20 +138,21 @@ public sealed class CharacterOrderSync
     }
 
     /// <summary>
-    /// The page's SAVE of <paramref name="guids"/>. It takes the sync's turn, so a send of the game's
+    /// The page's SAVE of <paramref name="guids"/> and its <paramref name="favourites"/> (null leaves the
+    /// realm's as they are). It takes the sync's turn, so a send of the game's
     /// order already on its way finishes first and the realm ends with the page's; a sync waiting for
     /// its turn, or in flight, changes nothing after it. Once saved, the account's waiting order and its
     /// value in accountList (never a login handoff or another account's, and only while
     /// <paramref name="mayWriteConfig"/> says so) are dropped: they're older.
     /// </summary>
-    public async Task<CharacterOrderResult> SavePageOrderAsync(LauncherSession session, IReadOnlyList<uint> guids, string clientDirectory,
-        Func<bool> mayWriteConfig, CancellationToken cancellationToken = default)
+    public async Task<CharacterOrderResult> SavePageOrderAsync(LauncherSession session, IReadOnlyList<uint> guids,
+        IReadOnlyList<uint>? favourites, string clientDirectory, Func<bool> mayWriteConfig, CancellationToken cancellationToken = default)
     {
         Interlocked.Increment(ref _generation);
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            var result = await _service.SaveAsync(session, guids, cancellationToken);
+            var result = await _service.SaveAsync(session, guids, favourites, cancellationToken);
             if (result.Outcome != CharacterOrderOutcome.Saved) return result;
             var account = Key(session.AccountName);
             if (Orders.Remove(account)) Save();

@@ -111,10 +111,12 @@ public sealed class PortalkeeperSettings
 
 /// <summary>
 /// An unsent character order (CharacterOrderSync): the accountList value the game left
-/// (<see cref="SourceValue"/>), and once the realm's list was read, the guids it came to, top first.
+/// (<see cref="SourceValue"/>), and once the realm's list was read, the guids it came to, top first,
+/// and the favourites among them (null: the value didn't say, so the realm's stay as they are).
 /// </summary>
 public sealed class PendingCharacterOrder
 {
     public string? SourceValue { get; set; }
     public List<uint> Guids { get; set; } = new();
+    public List<uint>? FavouriteGuids { get; set; }
 }
