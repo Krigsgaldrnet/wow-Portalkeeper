@@ -24,14 +24,19 @@ public enum CharacterSort { Level, Name, Class, LastPlayed }
 /// move the picked one up or down, or sort by level, name, class or last played; nothing reaches the
 /// realm until SAVE, and REVERT goes back to the realm's order. The order can't be changed while the
 /// game runs: its character select screen has its own copy and would leave that behind on exit.
+///
+/// Favourites (stars) work as on the character select screen: they always come first. Starring one
+/// puts it at the end of the group, unstarring right under it; moving a character across the line
+/// under the group stars or unstars it, and the sorts keep the group on top.
 /// </summary>
 public sealed class CharactersViewModel : ViewModelBase, IDisposable
 {
     private readonly CharacterOrderService _service;
     private readonly LauncherSession _session;
-    private readonly Func<IReadOnlyList<uint>, CancellationToken, Task<CharacterOrderResult>> _save;
+    private readonly Func<IReadOnlyList<uint>, IReadOnlyList<uint>, CancellationToken, Task<CharacterOrderResult>> _save;
     private readonly CancellationTokenSource _closed = new();
     private IReadOnlyList<uint> _saved = [];
+    private HashSet<uint> _savedFavourites = [];
     private int _loadVersion;
 
     private bool _isLoading;
@@ -44,16 +49,17 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
     private CharacterOrderRowView? _selectedCharacter;
 
     /// <param name="save">
-    /// Saves an order (guids, top first). The launcher's goes through <see cref="CharacterOrderSync"/>, so
-    /// it waits for, or overtakes, an order from the game on its way; null saves with <paramref name="service"/>.
+    /// Saves an order (guids, top first) and the favourites. The launcher's goes through
+    /// <see cref="CharacterOrderSync"/>, so it waits for, or overtakes, an order from the game on its way;
+    /// null saves with <paramref name="service"/>.
     /// </param>
     public CharactersViewModel(CharacterOrderService service, LauncherSession session, bool gameRunning = false,
-        Func<IReadOnlyList<uint>, CancellationToken, Task<CharacterOrderResult>>? save = null)
+        Func<IReadOnlyList<uint>, IReadOnlyList<uint>, CancellationToken, Task<CharacterOrderResult>>? save = null)
     {
         _service = service;
         _session = session;
         _isGameRunning = gameRunning;
-        _save = save ?? ((guids, cancellationToken) => service.SaveAsync(session, guids, cancellationToken));
+        _save = save ?? ((guids, favourites, cancellationToken) => service.SaveAsync(session, guids, favourites, cancellationToken));
     }
 
     /// <summary>The portal says the login is no longer good (401), with its message.</summary>
@@ -90,12 +96,20 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
     }
 
     public bool CanEdit => _hasListing && !_isSaving && !_isGameRunning && Characters.Count > 1;
-    public bool HasUnsavedChanges => _hasListing && !Characters.Select(c => c.Guid).SequenceEqual(_saved);
+    public bool CanStar => _hasListing && !_isSaving && !_isGameRunning;
+    public bool HasUnsavedChanges => _hasListing && (!Characters.Select(c => c.Guid).SequenceEqual(_saved)
+        || !Characters.Where(c => c.IsFavourite).Select(c => c.Guid).ToHashSet().SetEquals(_savedFavourites));
     public string UnsavedText => HasUnsavedChanges ? "Unsaved changes" : "";
-    public bool CanSave => HasUnsavedChanges && CanEdit && !_isLoading;
+    // CanStar, not CanEdit: one character can't be moved, but it can be starred.
+    public bool CanSave => HasUnsavedChanges && CanStar && !_isLoading;
     public bool CanRevert => HasUnsavedChanges && !_isSaving;
     public bool CanMoveUp => CanEdit && _selectedCharacter is { } row && Characters.IndexOf(row) > 0;
-    public bool CanMoveDown => CanEdit && _selectedCharacter is { } row && Characters.IndexOf(row) is var at && at >= 0 && at < Characters.Count - 1;
+    // The last favourite at the bottom can still step down: that unstars it.
+    public bool CanMoveDown => CanEdit && _selectedCharacter is { } row && Characters.IndexOf(row) is var at && at >= 0
+        && (at < Characters.Count - 1 || row.IsFavourite);
+
+    /// <summary>How many favourites there are: the first this many rows.</summary>
+    public int FavouriteCount => Characters.Count(c => c.IsFavourite);
 
     public void SetGameRunning(bool running)
     {
@@ -109,24 +123,49 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
     // The draft
     // ---------------------------------------------------------
 
+    // One step; at the line under the favourites the step only crosses it (stars or unstars).
     public void MoveUp()
     {
-        if (CanMoveUp) Move(_selectedCharacter!, Characters.IndexOf(_selectedCharacter!) - 1);
+        if (!CanMoveUp) return;
+        var at = Characters.IndexOf(_selectedCharacter!);
+        if (at == FavouriteCount && !_selectedCharacter!.IsFavourite) MoveTo(_selectedCharacter, at, true);
+        else Move(_selectedCharacter!, at - 1);
     }
 
     public void MoveDown()
     {
-        if (CanMoveDown) Move(_selectedCharacter!, Characters.IndexOf(_selectedCharacter!) + 1);
+        if (!CanMoveDown) return;
+        var at = Characters.IndexOf(_selectedCharacter!);
+        if (at == FavouriteCount - 1 && _selectedCharacter!.IsFavourite) MoveTo(_selectedCharacter, at, false);
+        else Move(_selectedCharacter!, at + 1);
     }
 
-    /// <summary>Puts <paramref name="row"/> at <paramref name="index"/>; the rows between shift over. Dragging a row onto another does this.</summary>
+    /// <summary>
+    /// Puts <paramref name="row"/> at <paramref name="index"/>; the rows between shift over. Dragging a row
+    /// onto another does this. A row that lands among the favourites is one, and one that lands under
+    /// them isn't.
+    /// </summary>
     public bool Move(CharacterOrderRowView row, int index)
     {
-        var from = Characters.IndexOf(row);
-        if (!CanEdit || from < 0) return false;
+        if (!CanEdit || !Characters.Contains(row)) return false;
         index = Math.Clamp(index, 0, Characters.Count - 1);
-        if (index == from) return false;
-        Characters.Move(from, index);
+        return MoveTo(row, index, index < FavouriteCount);
+    }
+
+    /// <summary>Stars a character (last of the favourites) or unstars it (first after them).</summary>
+    public bool ToggleFavourite(CharacterOrderRowView row)
+    {
+        if (!CanStar || !Characters.Contains(row)) return false;
+        var count = FavouriteCount;
+        return row.IsFavourite ? MoveTo(row, count - 1, false) : MoveTo(row, count, true);
+    }
+
+    private bool MoveTo(CharacterOrderRowView row, int index, bool starred)
+    {
+        var from = Characters.IndexOf(row);
+        if (from < 0 || (from == index && row.IsFavourite == starred)) return false;
+        row.IsFavourite = starred;
+        if (from != index) Characters.Move(from, index);
         SelectedCharacter = row;
         Renumber();
         return true;
@@ -137,14 +176,15 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
     {
         if (!CanEdit) return;
         var name = StringComparer.CurrentCultureIgnoreCase;
-        var rows = Characters.ToList();
+        // The favourites stay on top, each group sorted.
+        var rows = Characters.OrderByDescending(r => r.IsFavourite);
         IEnumerable<CharacterOrderRowView> sorted = sort switch
         {
-            CharacterSort.Level => rows.OrderByDescending(r => r.Level).ThenBy(r => r.Name, name),
-            CharacterSort.Name => rows.OrderBy(r => r.Name, name),
-            CharacterSort.Class => rows.OrderBy(r => r.ClassName, name).ThenByDescending(r => r.Level).ThenBy(r => r.Name, name),
+            CharacterSort.Level => rows.ThenByDescending(r => r.Level).ThenBy(r => r.Name, name),
+            CharacterSort.Name => rows.ThenBy(r => r.Name, name),
+            CharacterSort.Class => rows.ThenBy(r => r.ClassName, name).ThenByDescending(r => r.Level).ThenBy(r => r.Name, name),
             // Online now is the most recent; never played goes last.
-            _ => rows.OrderByDescending(r => r.Online).ThenByDescending(r => r.Character.LastPlayed ?? DateTimeOffset.MinValue).ThenBy(r => r.Name, name),
+            _ => rows.ThenByDescending(r => r.Online).ThenByDescending(r => r.Character.LastPlayed ?? DateTimeOffset.MinValue).ThenBy(r => r.Name, name),
         };
         Replace(sorted.ToList());
     }
@@ -154,6 +194,7 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
     {
         if (_isSaving) return;
         var byGuid = Characters.ToDictionary(c => c.Guid);
+        foreach (var row in Characters) row.IsFavourite = _savedFavourites.Contains(row.Guid);
         Replace(_saved.Where(byGuid.ContainsKey).Select(g => byGuid[g]).ToList());
     }
 
@@ -224,10 +265,11 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
     {
         if (!CanSave) return;
         var guids = Characters.Select(c => c.Guid).ToArray();
+        var favourites = Characters.Where(c => c.IsFavourite).Select(c => c.Guid).ToArray();
         IsSaving = true;
         SetStatus("Saving the order...", false);
         CharacterOrderResult result;
-        try { result = await _save(guids, _closed.Token); }
+        try { result = await _save(guids, favourites, _closed.Token); }
         catch (OperationCanceledException) { return; }
         finally { IsSaving = false; }
 
@@ -237,7 +279,11 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
                 ++_loadVersion; // an older listing on its way is out of date
                 IsLoading = false;
                 Apply(characters, keepDraft: false);
-                SetStatus("Saved. The character select screen shows this order the next time you log in.", false);
+                // A realm without the favourite column (or the portal's grant on it) saves the order alone.
+                if (!_savedFavourites.SetEquals(favourites))
+                    SetStatus("The order was saved, but this realm doesn't keep favourites yet, so the stars weren't.", true);
+                else
+                    SetStatus("Saved. The character select screen shows this order the next time you log in.", false);
                 return;
             case CharacterOrderOutcome.LoggedOut:
                 SetStatus(result.Message, true);
@@ -269,17 +315,25 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// The realm's list. With unsaved changes (and <paramref name="keepDraft"/>) the draft order stays
-    /// for the characters still there, and new ones go at the end.
+    /// The realm's list, favourites first as the character select screen shows it. With unsaved changes
+    /// (and <paramref name="keepDraft"/>) the draft order and stars stay for the characters still there,
+    /// and new ones go at the end.
     /// </summary>
     private void Apply(IReadOnlyList<OrderedCharacter> characters, bool keepDraft = true)
     {
         var draft = keepDraft && HasUnsavedChanges ? Characters.Select(c => c.Guid).ToList() : null;
+        var draftFavourites = draft is null ? null : Characters.Where(c => c.IsFavourite).Select(c => c.Guid).ToHashSet();
         var selected = _selectedCharacter?.Guid;
-        _saved = characters.Select(c => c.Guid).ToArray();
-        var rows = characters.Select(c => new CharacterOrderRowView(c)).ToList();
+        var realm = characters.OrderByDescending(c => c.Favourite).ToList();
+        _saved = realm.Select(c => c.Guid).ToArray();
+        _savedFavourites = realm.Where(c => c.Favourite).Select(c => c.Guid).ToHashSet();
+        var rows = realm.Select(c => new CharacterOrderRowView(c)).ToList();
         if (draft is not null)
-            rows = rows.OrderBy(r => draft.IndexOf(r.Guid) is var at && at >= 0 ? at : int.MaxValue).ToList();
+        {
+            foreach (var row in rows.Where(r => draft.Contains(r.Guid))) row.IsFavourite = draftFavourites!.Contains(row.Guid);
+            rows = rows.OrderByDescending(r => r.IsFavourite)
+                .ThenBy(r => draft.IndexOf(r.Guid) is var at && at >= 0 ? at : int.MaxValue).ToList();
+        }
         Characters.Clear();
         foreach (var row in rows) Characters.Add(row);
         _selectedCharacter = rows.FirstOrDefault(r => r.Guid == selected);
@@ -306,6 +360,7 @@ public sealed class CharactersViewModel : ViewModelBase, IDisposable
     {
         OnPropertyChanged(nameof(CanRefresh));
         OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(CanStar));
         OnPropertyChanged(nameof(HasUnsavedChanges));
         OnPropertyChanged(nameof(UnsavedText));
         OnPropertyChanged(nameof(CanSave));
@@ -337,6 +392,7 @@ public sealed class CharacterOrderRowView(OrderedCharacter character) : ViewMode
 {
     private int _position;
     private bool _isDropTarget;
+    private bool _isFavourite = character.Favourite;
 
     public OrderedCharacter Character { get; } = character;
     public uint Guid => Character.Guid;
@@ -352,6 +408,15 @@ public sealed class CharacterOrderRowView(OrderedCharacter character) : ViewMode
     /// <summary>1 is the top of the character select screen.</summary>
     public int Position { get => _position; set { if (SetProperty(ref _position, value)) OnPropertyChanged(nameof(PositionText)); } }
     public string PositionText => _position.ToString(CultureInfo.InvariantCulture);
+    /// <summary>Starred (in the draft): first on the character select screen and in the warband camp.</summary>
+    public bool IsFavourite
+    {
+        get => _isFavourite;
+        set { if (SetProperty(ref _isFavourite, value)) OnPropertyChanged(nameof(StarTip)); }
+    }
+    public string StarTip => _isFavourite
+        ? "A favourite: first on the character select screen and in your camp. Click to unstar."
+        : "Star it: favourites come first on the character select screen and stand in your camp.";
     /// <summary>A dragged row is over this one.</summary>
     public bool IsDropTarget { get => _isDropTarget; set => SetProperty(ref _isDropTarget, value); }
 

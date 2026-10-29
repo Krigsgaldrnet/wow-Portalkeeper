@@ -17,8 +17,9 @@ namespace Portalkeeper.Services;
 
 /// <param name="LastPlayed">When it last logged out, or null when it never played.</param>
 /// <param name="Order">Its place in the saved order, or null when the player never placed it (the portal lists those last).</param>
+/// <param name="Favourite">Starred: the character select screen shows it first and in the warband camp.</param>
 public sealed record OrderedCharacter(uint Guid, string Name, int Race, int Class, int Gender, int Level,
-    DateTimeOffset? LastPlayed, bool Online, int? Order);
+    DateTimeOffset? LastPlayed, bool Online, int? Order, bool Favourite = false);
 
 public enum CharacterOrderOutcome
 {
@@ -42,9 +43,11 @@ public enum CharacterOrderOutcome
 /// An order the character select screen left for <paramref name="Account"/>: <paramref name="Positions"/>
 /// are 1-based places in the realm's list of <paramref name="Count"/> characters whose names hash to
 /// <paramref name="Hash"/> (<see cref="CharacterOrderService.ListHash"/>), top first; characters it
-/// leaves out go after them.
+/// leaves out go after them. The first <paramref name="Favourites"/> positions are the account's
+/// favourites (no others are); null when the screen didn't say (an older one), so they stay as they are.
 /// </summary>
-public sealed record PendingCharacterPositions(string Account, int Count, uint Hash, IReadOnlyList<int> Positions);
+public sealed record PendingCharacterPositions(string Account, int Count, uint Hash, IReadOnlyList<int> Positions,
+    int? Favourites = null);
 
 /// <param name="Code">The portal's reason for a refusal (409: not_yours, duplicate), or null.</param>
 public sealed record CharacterOrderResult(CharacterOrderOutcome Outcome, string Message,
@@ -69,7 +72,7 @@ public sealed class CharacterOrderService
     public const string ConfigSetting = "accountList";
     /// <summary>The code of a 400 (a malformed order): sending it again can't help.</summary>
     public const string BadRequestCode = "bad_request";
-    /// <summary>An order in accountList: "evermoreorder:ACCOUNT:COUNT:HASH:p1,p2,...".</summary>
+    /// <summary>An order in accountList: "evermoreorder:ACCOUNT:COUNT:HASH:p1,p2,...[:FAVOURITES]".</summary>
     public const string OrderPrefix = "evermoreorder:";
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
@@ -107,17 +110,18 @@ public sealed class CharacterOrderService
     }
 
     /// <summary>
-    /// Saves <paramref name="guids"/> as the account's order. Never throws for an answer or a lost
-    /// connection: the result says what happened.
+    /// Saves <paramref name="guids"/> as the account's order, and when <paramref name="favourites"/> isn't
+    /// null, those as the account's favourites (and no others; empty clears them). Never throws for an
+    /// answer or a lost connection: the result says what happened.
     /// </summary>
     public async Task<CharacterOrderResult> SaveAsync(LauncherSession session, IReadOnlyList<uint> guids,
-        CancellationToken cancellationToken = default)
+        IReadOnlyList<uint>? favourites = null, CancellationToken cancellationToken = default)
     {
         HttpResponseMessage response;
         try
         {
             using var request = Authorized(HttpMethod.Post, session.Token);
-            request.Content = JsonContent.Create(new SaveRequest(guids.Distinct().ToArray()));
+            request.Content = JsonContent.Create(new SaveRequest(guids.Distinct().ToArray(), favourites?.Distinct().ToArray()));
             response = await _http.SendAsync(request, cancellationToken);
         }
         catch (HttpRequestException ex) when (ex.HttpRequestError is HttpRequestError.NameResolutionError or HttpRequestError.ConnectionError)
@@ -171,14 +175,17 @@ public sealed class CharacterOrderService
 
     /// <summary>
     /// The order in an accountList value the character select screen left, whoever's it is
-    /// ("evermoreorder:ACCOUNT:COUNT:HASH:p1,p2,..."). Null when it isn't one: empty, a login handoff,
-    /// no account, no positions, or positions that can't be (twice, or outside 1..COUNT).
+    /// ("evermoreorder:ACCOUNT:COUNT:HASH:p1,p2,...", and from the screen that stars favourites
+    /// ":FAVOURITES" after it: how many of the first positions are favourites, 0..COUNT). Null when it
+    /// isn't one: empty, a login handoff, no account, no positions, positions that can't be (twice,
+    /// or outside 1..COUNT), or a favourites count that isn't a number up to COUNT. A count past the
+    /// positions given means all of them, as the screen reads it.
     /// </summary>
     public static PendingCharacterPositions? ParseOrder(string? value)
     {
         if (string.IsNullOrEmpty(value) || !value.StartsWith(OrderPrefix, StringComparison.Ordinal)) return null;
         var parts = value[OrderPrefix.Length..].Split(':');
-        if (parts.Length != 4 || parts[0].Trim().Length == 0) return null;
+        if (parts.Length is not (4 or 5) || parts[0].Trim().Length == 0) return null;
         if (!int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var count) || count < 1 || count > 255) return null;
         if (parts[2].Length is < 1 or > 8 || !uint.TryParse(parts[2], NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var hash))
             return null;
@@ -190,7 +197,13 @@ public sealed class CharacterOrderService
                 return null;
             positions.Add(position);
         }
-        return positions.Count == 0 ? null : new PendingCharacterPositions(parts[0].Trim(), count, hash, positions);
+        int? favourites = null;
+        if (parts.Length == 5)
+        {
+            if (!int.TryParse(parts[4], NumberStyles.None, CultureInfo.InvariantCulture, out var starred) || starred > count) return null;
+            favourites = Math.Min(starred, positions.Count);
+        }
+        return positions.Count == 0 ? null : new PendingCharacterPositions(parts[0].Trim(), count, hash, positions, favourites);
     }
 
     /// <summary>
@@ -253,7 +266,7 @@ public sealed class CharacterOrderService
         return (body.Characters ?? []).OfType<CharacterBody>().Where(c => c.Guid > 0 && seen.Add(c.Guid))
             .Select(c => new OrderedCharacter(c.Guid, (c.Name ?? "").Trim(), c.Race, c.Class, c.Gender, c.Level,
                 c.LastPlayed is > 0 and < 253402300799 ? DateTimeOffset.FromUnixTimeSeconds(c.LastPlayed.Value) : null,
-                c.Online, c.Order))
+                c.Online, c.Order, c.Favourite))
             .ToArray();
     }
 
@@ -288,11 +301,13 @@ public sealed class CharacterOrderService
         [property: JsonPropertyName("level")] int Level,
         [property: JsonPropertyName("lastPlayed")] long? LastPlayed,
         [property: JsonPropertyName("online")] bool Online,
-        [property: JsonPropertyName("order")] int? Order);
+        [property: JsonPropertyName("order")] int? Order,
+        [property: JsonPropertyName("favourite")] bool Favourite);
     private sealed record ListBody(
         [property: JsonPropertyName("characters")] CharacterBody?[]? Characters);
     private sealed record SaveRequest(
-        [property: JsonPropertyName("order")] uint[] Order);
+        [property: JsonPropertyName("order")] uint[] Order,
+        [property: JsonPropertyName("favourites"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint[]? Favourites);
     private sealed record ErrorBody(
         [property: JsonPropertyName("error")] string? Error,
         [property: JsonPropertyName("message")] string? Message);

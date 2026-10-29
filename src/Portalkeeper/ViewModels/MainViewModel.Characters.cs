@@ -86,7 +86,7 @@ public sealed partial class MainViewModel
         if (_characters is not null) return true;
         if (_session is not { } session || !CharactersAvailable) return false;
         var characters = new CharactersViewModel(_characterOrderService, session, IsGameRunning || IsLaunching,
-            (guids, cancellationToken) => SavePageOrderAsync(session, guids, cancellationToken));
+            (guids, favourites, cancellationToken) => SavePageOrderAsync(session, guids, favourites, cancellationToken));
         characters.LoginExpired += message => _ = ShopLoginExpiredAsync(message);
         characters.Unavailable += CharactersTurnedOff;
         _characters = characters;
@@ -144,11 +144,12 @@ public sealed partial class MainViewModel
     /// its way (and overtakes it), and once saved, drops the one the game left behind, which is older.
     /// accountList is only written while no launch or game is under way.
     /// </summary>
-    private Task<CharacterOrderResult> SavePageOrderAsync(LauncherSession session, IReadOnlyList<uint> guids, CancellationToken cancellationToken)
+    private Task<CharacterOrderResult> SavePageOrderAsync(LauncherSession session, IReadOnlyList<uint> guids,
+        IReadOnlyList<uint> favourites, CancellationToken cancellationToken)
     {
         var root = EffectiveClientPath;
         var ownClient = RealmBranding.IsBuiltIn(_realmInfo) && !IsIsolatedRealm;
-        return OrderSync.SavePageOrderAsync(session, guids, root,
+        return OrderSync.SavePageOrderAsync(session, guids, favourites, root,
             () => ownClient && ClientValid && !IsLaunching && !IsGameRunning, cancellationToken);
     }
 }
