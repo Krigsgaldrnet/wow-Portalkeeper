@@ -2,10 +2,12 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
-    <Version>0.5.46</Version>
-    <AssemblyVersion>0.5.45.0</AssemblyVersion>
-    <FileVersion>0.5.45.0</FileVersion>
-    <InformationalVersion>0.5.45</InformationalVersion>
+    <!-- The release's version: the only one to change. The launcher reads InformationalVersion as its
+         own (update checks, MinimumVersion), so the others follow it. -->
+    <Version>0.5.47</Version>
+    <AssemblyVersion>$(Version).0</AssemblyVersion>
+    <FileVersion>$(Version).0</FileVersion>
+    <InformationalVersion>$(Version)</InformationalVersion>
     <Product>Portalkeeper</Product>
     <Description>Cross-platform realm launcher and addon manager for World of Warcraft 3.3.5a.</Description>
     <Nullable>enable</Nullable>
