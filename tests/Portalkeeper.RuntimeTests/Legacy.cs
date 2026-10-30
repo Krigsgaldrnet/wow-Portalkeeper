@@ -437,6 +437,89 @@ internal static partial class Program
             check("legacy page: CLEAR ALL keeps the permanent perk's saved ranks",
                 Perk("deep_pockets").Rank == 2 && Perk("gatherer").Rank == 0 && legacy is { Spent: 2, HasUnsavedChanges: true });
         }
+
+        // Era caps and hardcore characters that may only take Talented, Prodigy and Deep Pockets,
+        // without the Adventure points and Well Rested those normally need.
+        const string eraJson = """
+            {"cap":125,"earned":{"total":100,"hardcore":30},
+             "characters":[{"guid":31,"name":"Vanilla","race":1,"class":1,"gender":0,"level":40,"online":true,
+                            "hardcore":false,"era":"Classic","cap":67,"points":67,"spent":0,"ranks":{}},
+                           {"guid":32,"name":"Steelheart","race":1,"class":1,"gender":0,"level":30,"online":false,
+                            "hardcore":true,"era":"Classic","cap":67,"points":30,"spent":1,"only":["talented","prodigy","deep_pockets","Bad-Id"],"ranks":{"deep_pockets":1}},
+                           {"guid":33,"name":"Greedy","race":1,"class":1,"gender":0,"level":30,"online":false,
+                            "hardcore":false,"era":"Classic","cap":500,"points":600,"spent":0,"ranks":{}},
+                           {"guid":34,"name":"Wasthere","race":1,"class":1,"gender":0,"level":30,"online":false,
+                            "hardcore":true,"era":"Classic","cap":67,"points":30,"spent":2,"only":["talented","prodigy","deep_pockets"],"ranks":{"gatherer":2}}],
+             "trees":[
+               {"id":"adventure","name":"Adventure","icon":"inv_misc_map_01",
+                "perks":[{"id":"well_rested","name":"Well Rested","maxRank":5,"row":0,"column":1,"ranks":[]},
+                         {"id":"talented","name":"Talented","maxRank":5,"row":2,"column":2,"requiresTreePoints":10,"requiresPerk":"well_rested","ranks":[]},
+                         {"id":"prodigy","name":"Prodigy","maxRank":9,"row":3,"column":2,"requiresTreePoints":15,"requiresPerk":"talented","ranks":[]}]},
+               {"id":"professions","name":"Professions","icon":"trade_engineering",
+                "perks":[{"id":"gatherer","name":"Gatherer","maxRank":5,"row":0,"column":0,"ranks":["a","b","c","d","e"]}]},
+               {"id":"general","name":"General","icon":"inv_misc_bag_19","strip":true,
+                "perks":[{"id":"deep_pockets","name":"Deep Pockets","maxRank":10,"row":0,"column":0,"permanent":true,"ranks":[]},
+                         {"id":"hasty_hearth","name":"Hasty Hearth","icon":"inv_misc_rune_01","maxRank":5,"row":0,"column":1,"ranks":["25 min","20 min","15 min","10 min","5 min"]}]}],
+             "challenges":[]}
+            """;
+        var eras = (await Service(new FakeLegacyPortal { ListingJson = eraJson }).GetListingAsync(session))!;
+        check("legacy: a character's own cap and era are read",
+            eras.Cap == 125 && eras.Characters[0] is { Cap: 67, Era: "Classic", Points: 67, Only: null });
+        check("legacy: a hardcore character's only-perks list is read, bad ids left out",
+            eras.Characters[1] is { Hardcore: true, Points: 30, Only: ["talented", "prodigy", "deep_pockets"] });
+        check("legacy: a character's cap and points never go above the listing's cap", eras.Characters[2] is { Cap: 125, Points: 125 });
+        var et = eras.Trees;
+        var hearth = LegacyRules.FindPerk(et, "hasty_hearth")!;
+        var talented = LegacyRules.FindPerk(et, "talented")!;
+        var prodigy = LegacyRules.FindPerk(et, "prodigy")!;
+        var hc = new[] { "talented", "prodigy", "deep_pockets" };
+        var none = new Dictionary<string, int>();
+        const string hcOnly = "Hardcore characters can only take Talented, Prodigy and Deep Pockets";
+        check("legacy rules: a perk not on the only-list can't be added, and says why",
+            LegacyRules.AddBlocker(et, none, hearth, 30, hc) == hcOnly
+            && LegacyRules.CanAdd(et, none, LegacyRules.FindPerk(et, "deep_pockets")!, 30, hc)
+            && LegacyRules.CanAdd(et, none, hearth, 30));
+        check("legacy rules: hardcore Talented needs no Adventure points and no Well Rested; normal still does",
+            LegacyRules.CanAdd(et, none, talented, 30, hc) && LegacyRules.RequirementsMet(et, none, talented, hc)
+            && LegacyRules.AddBlocker(et, none, talented, 30) == "Requires 10 points in Adventure");
+        check("legacy rules: hardcore Prodigy still needs Talented 5/5, not the 15 Adventure points",
+            LegacyRules.AddBlocker(et, new Dictionary<string, int> { ["talented"] = 4 }, prodigy, 30, hc) == "Requires Talented at 5/5"
+            && LegacyRules.CanAdd(et, new Dictionary<string, int> { ["talented"] = 5 }, prodigy, 30, hc)
+            && !LegacyRules.CanRemove(et, new Dictionary<string, int> { ["talented"] = 5, ["prodigy"] = 1 }, talented, null, hc));
+        var hcBuild = new Dictionary<string, int> { ["talented"] = 5, ["prodigy"] = 9, ["deep_pockets"] = 10 };
+        check("legacy rules: the 24-point hardcore build can be saved; for a normal character it can't",
+            LegacyRules.Spent(hcBuild) == 24 && LegacyRules.BuildProblem(et, hcBuild, 30, hc) is null
+            && LegacyRules.BuildProblem(et, hcBuild, 30) is not null);
+        check("legacy rules: a build with a perk off the only-list can't be saved",
+            LegacyRules.BuildProblem(et, new Dictionary<string, int> { ["gatherer"] = 2 }, 30, hc) == hcOnly + ". Take Gatherer back.");
+        using (var legacy = Legacy(new FakeLegacyPortal { ListingJson = eraJson }))
+        {
+            await legacy.LoadAsync();
+            LegacyPerkView Perk(string id) => legacy.Trees.Concat(legacy.Strips).SelectMany(t => t.Perks).First(p => p.Perk.Id == id);
+            check("legacy page: the caption names the character's era cap",
+                legacy.SelectedCharacter?.Guid == 31 && legacy.PointsCaption == "spent / available · cap 67 in Classic"
+                && legacy.Strips[0].Perks.Count == 2 && Perk("hasty_hearth").CanAdd
+                && Perk("talented") is { CanAdd: false, RequirementText: "Requires 10 points in Adventure and Well Rested at 5/5" });
+            legacy.RequestCharacter(legacy.Characters.First(c => c.Guid == 32));
+            check("legacy page: a hardcore character can't raise perks off its list",
+                legacy.SelectedCharacter?.Guid == 32 && !legacy.Add(Perk("hasty_hearth")) && !legacy.Add(Perk("well_rested"))
+                && Perk("hasty_hearth") is { CanAdd: false, IsDimmed: true, BlockerText: hcOnly }
+                && legacy.HardcoreNote.EndsWith("and hardcore characters can only take Talented, Prodigy and Deep Pockets.", StringComparison.Ordinal));
+            check("legacy page: a hardcore character's Talented shows no requirement, Prodigy only Talented",
+                Perk("talented") is { CanAdd: true, RequirementText: "" } && Perk("prodigy") is { CanAdd: false, RequirementText: "Requires Talented at 5/5" });
+            for (var i = 0; i < 5; i++) legacy.Add(Perk("talented"));
+            for (var i = 0; i < 9; i++) legacy.Add(Perk("prodigy"));
+            for (var i = 0; i < 9; i++) legacy.Add(Perk("deep_pockets"));
+            check("legacy page: a hardcore character builds the full 24 points and can save it",
+                legacy is { Spent: 24, HasBuildProblem: false, CanSave: true }
+                && Perk("talented").Rank == 5 && Perk("prodigy").Rank == 9 && Perk("deep_pockets").Rank == 10);
+            check("legacy page: Talented can't go back while Prodigy needs it", !legacy.Remove(Perk("talented")));
+            legacy.ResetDraft();
+            legacy.RequestCharacter(legacy.Characters.First(c => c.Guid == 34));
+            check("legacy page: a hardcore character with a tree perk is told to take it back, and can",
+                legacy.BuildProblem == hcOnly + ". Take Gatherer back."
+                && legacy.Remove(Perk("gatherer")) && legacy.Remove(Perk("gatherer")) && !legacy.HasBuildProblem && legacy.CanSave);
+        }
     }
 
     private sealed class FakeLegacyPortal : HttpMessageHandler
