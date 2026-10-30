@@ -127,7 +127,8 @@ public sealed class RealmLaunchService
                     settings.Add((agreement, "1"));
             }
         }
-        WriteLaunchSettings(fullClientDirectory, settings, RealmBranding.IsBuiltIn(realm));
+        WriteLaunchSettings(fullClientDirectory, settings,
+            RealmBranding.IsBuiltIn(realm) && realm.Client.RuntimeMode != ClientRuntimeMode.Isolated);
         var process = LaunchWow(wowExecutable, fullClientDirectory, sourceClientDirectory, realm.Client.Executable);
 
         return new RealmLaunchResult
@@ -302,18 +303,42 @@ public sealed class RealmLaunchService
     /// <summary>
     /// Writes the launch's settings to the client's Config.wtf, with the <see cref="RaisedOnceSettings"/>
     /// the client hasn't had raised yet when <paramref name="raiseOnce"/> (the built-in realm). A raise
-    /// is only remembered once Config.wtf was there before the launch: a new client's first start runs
-    /// the game's hardware detection, which may lower it again, so the next launch raises it then.
+    /// is only remembered once the game has saved Config.wtf itself (<see cref="GameSavedConfig"/>): a
+    /// new client's first start runs the game's hardware detection, which may lower it again, so a later
+    /// launch raises it then. When the raise can't be written (its Config.wtf backup fails), the launch
+    /// goes on without it, as it would have before.
     /// </summary>
-    internal static void WriteLaunchSettings(string clientDirectory, List<(string Name, string Value)> settings, bool raiseOnce)
+    internal static void WriteLaunchSettings(string clientDirectory, IReadOnlyList<(string Name, string Value)> settings, bool raiseOnce)
     {
         var configPath = Path.Combine(clientDirectory, "WTF", "Config.wtf");
-        var gameWroteConfig = File.Exists(configPath);
+        var gameSaved = File.Exists(configPath) && GameSavedConfig(ReadConfig(configPath).Text);
         var raises = raiseOnce ? PendingRaises(clientDirectory) : [];
-        settings.AddRange(raises.Where(s => NeedsRaise(ReadConfigSetting(clientDirectory, s.Name), s.Value)));
-        WriteConfigSettings(configPath, settings, clientDirectory);
-        if (gameWroteConfig)
+        var raising = raises.Where(s => NeedsRaise(ReadConfigSetting(clientDirectory, s.Name), s.Value)).ToArray();
+        try
+        {
+            WriteConfigSettings(configPath, [.. settings, .. raising], clientDirectory);
+        }
+        catch (Exception ex) when (raising.Length > 0 && ex is IOException or UnauthorizedAccessException)
+        {
+            WriteConfigSettings(configPath, settings, clientDirectory);
+            return;
+        }
+        if (gameSaved)
             MarkRaised(clientDirectory, raises);
+    }
+
+    /// <summary>
+    /// True when Config.wtf has a line the launcher never writes (gxApi, locale, hwDetect...), so the
+    /// game has saved it at least once; a file with only the launcher's lines is one a crashed or
+    /// never-started first run left behind.
+    /// </summary>
+    internal static bool GameSavedConfig(string config)
+    {
+        var launcherNames = ClientSettings.Select(s => s.Name).Concat(RaisedOnceSettings.Select(s => s.Name))
+            .Concat(AgreementSettings).Concat(["realmName", "accountName", "accountList"])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return Regex.Matches(config, @"^[ \t]*SET[ \t]+(\S+)", RegexOptions.IgnoreCase | RegexOptions.Multiline)
+            .Any(match => !launcherNames.Contains(match.Groups[1].Value));
     }
 
     /// <summary>

@@ -151,6 +151,8 @@ internal static partial class Program
             LaunchSettings(farFresh);
             Check("a client without Config.wtf gets farclip 777", RealmLaunchService.ReadConfigSetting(farFresh, "farclip") == "777");
             Check("a new client's raise waits for the game's first Config.wtf", RealmLaunchService.PendingRaises(farFresh).Count == 1);
+            LaunchSettings(farFresh);
+            Check("a Config.wtf only the launcher wrote (the game never saved) still waits", RealmLaunchService.PendingRaises(farFresh).Count == 1);
             File.WriteAllText(Path.Combine(farFresh, "WTF", "Config.wtf"), "SET hwDetect \"0\"\r\nSET farclip \"507\"\r\n");
             LaunchSettings(farFresh);
             Check("a farclip the first start's hardware detection lowered is raised again", RealmLaunchService.ReadConfigSetting(farFresh, "farclip") == "777"
@@ -161,6 +163,20 @@ internal static partial class Program
             LaunchSettings(farOther, builtIn: false);
             Check("another realm's client keeps its farclip", RealmLaunchService.ReadConfigSetting(farOther, "farclip") == "400"
                 && !File.Exists(Path.Combine(farOther, ".portalkeeper", "raised-settings.txt")));
+            // A .portalkeeper the backup can't go into: the launch goes on without the raise.
+            var farLocked = Path.Combine(root, "farclip-no-backup");
+            Directory.CreateDirectory(Path.Combine(farLocked, "WTF"));
+            Directory.CreateDirectory(Path.Combine(farLocked, ".portalkeeper"));
+            File.WriteAllText(Path.Combine(farLocked, ".portalkeeper", "backups"), "not a folder");
+            File.WriteAllText(Path.Combine(farLocked, "WTF", "Config.wtf"),
+                "SET gxApi \"d3d9\"\r\nSET farclip \"400\"\r\nSET checkAddonVersion \"0\"\r\nSET showQuestTrackingTooltips \"1\"\r\n");
+            var lockedLaunched = true;
+            try { LaunchSettings(farLocked); } catch { lockedLaunched = false; }
+            Check("a backup that can't be written drops the raise, not the launch", lockedLaunched
+                && RealmLaunchService.ReadConfigSetting(farLocked, "farclip") == "400"
+                && RealmLaunchService.PendingRaises(farLocked).Count == 1);
+            Check("the game's own lines tell its Config.wtf from the launcher's", RealmLaunchService.GameSavedConfig("SET locale \"enUS\"\n")
+                && !RealmLaunchService.GameSavedConfig("SET checkAddonVersion \"0\"\nSET farclip \"777\"\nSET accountName \"A\"\nSET readEULA \"1\"\n"));
 
             // Client files the realm dropped from its client torrent (TheraWoW's login screen).
             var removeClient = Path.Combine(root, "remove", "WoW");
