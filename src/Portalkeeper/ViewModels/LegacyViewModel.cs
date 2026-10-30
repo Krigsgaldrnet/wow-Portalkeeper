@@ -139,19 +139,26 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
     public int Spent => LegacyRules.Spent(_draft);
     /// <summary>What the picked character may spend: hardcore characters only have hardcore-earned points.</summary>
     public int Available => _selectedCharacter?.Character.Points ?? 0;
+    /// <summary>The only perks the picked character may take (hardcore), or null for all.</summary>
+    public IReadOnlyList<string>? Only => _selectedCharacter?.Character.Only;
+    /// <summary>The picked character's own cap (its era's), else the listing's.</summary>
+    public int CharacterCap => _selectedCharacter?.Character.Cap is > 0 and var own ? own : _cap;
     public string PointsText => $"{Spent} / {Available}";
-    public string PointsCaption => $"spent / available · cap {_cap}";
+    public string PointsCaption => _selectedCharacter?.Character.Era is { Length: > 0 } era
+        ? $"spent / available · cap {CharacterCap} in {era}"
+        : $"spent / available · cap {CharacterCap}";
     public bool IsOverPoints => Spent > Available;
     public string EarnedText => (_earnedTotal == 1 ? "1 point earned on your account" : $"{_earnedTotal} points earned on your account")
         + (_earnedHardcore > 0 ? $" ({_earnedHardcore} on hardcore characters)" : "");
     public bool IsHardcore => _selectedCharacter?.IsHardcore == true;
     public string HardcoreNote => IsHardcore
-        ? $"Hardcore: only the {_earnedHardcore} {(_earnedHardcore == 1 ? "point" : "points")} earned on hardcore characters count for {_selectedCharacter!.Name}."
+        ? $"Hardcore: only the {_earnedHardcore} {(_earnedHardcore == 1 ? "point" : "points")} earned on hardcore characters count for {_selectedCharacter!.Name}"
+          + (Only is { } only ? $", and hardcore characters {LegacyRules.OnlyText(_trees, only)}." : ".")
         : "";
 
     public bool HasUnsavedChanges => _selectedCharacter is not null && !LegacyRules.SameBuild(_draft, Saved);
     /// <summary>What stops the draft from being saved, or empty.</summary>
-    public string BuildProblem => _selectedCharacter is null ? "" : LegacyRules.BuildProblem(_trees, _draft, Available) ?? "";
+    public string BuildProblem => _selectedCharacter is null ? "" : LegacyRules.BuildProblem(_trees, _draft, Available, Only) ?? "";
     public bool HasBuildProblem => BuildProblem.Length > 0;
     public bool CanSave => HasUnsavedChanges && !HasBuildProblem && !IsBusy;
     public bool CanUndo => HasUnsavedChanges && !_isSaving;
@@ -247,6 +254,9 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(SelectedCharacter));
         OnPropertyChanged(nameof(IsHardcore));
         OnPropertyChanged(nameof(HardcoreNote));
+        OnPropertyChanged(nameof(Only));
+        OnPropertyChanged(nameof(CharacterCap));
+        OnPropertyChanged(nameof(PointsCaption));
         OnPropertyChanged(nameof(ShowPerkTools));
         UpdateDraft();
     }
@@ -258,7 +268,7 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
     /// <summary>Left-click: one rank more, when the rules allow it.</summary>
     public bool Add(LegacyPerkView perk)
     {
-        if (!CanEdit || !LegacyRules.CanAdd(_trees, _draft, perk.Perk, Available)) return false;
+        if (!CanEdit || !LegacyRules.CanAdd(_trees, _draft, perk.Perk, Available, Only)) return false;
         _draft = LegacyRules.With(_draft, perk.Perk.Id, LegacyRules.Rank(_draft, perk.Perk.Id) + 1);
         UpdateDraft();
         return true;
@@ -267,7 +277,7 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
     /// <summary>Right-click: one rank less, unless another perk needs it (taken back first).</summary>
     public bool Remove(LegacyPerkView perk)
     {
-        if (!CanEdit || !LegacyRules.CanRemove(_trees, _draft, perk.Perk, Saved)) return false;
+        if (!CanEdit || !LegacyRules.CanRemove(_trees, _draft, perk.Perk, Saved, Only)) return false;
         _draft = LegacyRules.With(_draft, perk.Perk.Id, LegacyRules.Rank(_draft, perk.Perk.Id) - 1);
         UpdateDraft();
         return true;
@@ -291,7 +301,7 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
 
     private void UpdateDraft()
     {
-        foreach (var tree in Trees.Concat(Strips)) tree.Update(_trees, _draft, Saved, Available, CanEdit);
+        foreach (var tree in Trees.Concat(Strips)) tree.Update(_trees, _draft, Saved, Available, CanEdit, Only);
         OnPropertyChanged(nameof(Draft));
         OnPropertyChanged(nameof(Spent));
         OnPropertyChanged(nameof(Available));
@@ -405,6 +415,12 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
         var index = Characters.ToList().FindIndex(c => c.Guid == saved.Guid);
         // An answer that doesn't name the points (null) keeps what the listing said.
         if (saved.PointsMissing && index >= 0) saved = saved with { Points = Characters[index].Character.Points, PointsMissing = false };
+        // So does one without the character's own cap (its era and hardcore limits come with it).
+        if (saved.Cap == 0 && index >= 0)
+        {
+            var listed = Characters[index].Character;
+            saved = saved with { Cap = listed.Cap, Era = listed.Era, Only = listed.Only };
+        }
         var view = new LegacyCharacterView(saved);
         if (index >= 0) Characters[index] = view;
         else Characters.Add(view);
@@ -596,10 +612,11 @@ public sealed class LegacyTreeView : ViewModelBase
     public int Spent { get => _spent; private set { if (SetProperty(ref _spent, value)) OnPropertyChanged(nameof(SpentText)); } }
     public string SpentText => _spent == 1 ? "1 point" : $"{_spent} points";
 
-    public void Update(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> draft, IReadOnlyDictionary<string, int> saved, int points, bool canEdit)
+    public void Update(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> draft, IReadOnlyDictionary<string, int> saved, int points, bool canEdit,
+        IReadOnlyCollection<string>? only = null)
     {
         Spent = LegacyRules.TreeSpent(Tree, draft);
-        foreach (var perk in Perks) perk.Update(trees, draft, saved, points, canEdit);
+        foreach (var perk in Perks) perk.Update(trees, draft, saved, points, canEdit, only);
     }
 }
 
@@ -672,16 +689,17 @@ public sealed class LegacyPerkView(LegacyPerk perk, string treeName) : ViewModel
 
     private string _requirementText = "";
 
-    public void Update(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> draft, IReadOnlyDictionary<string, int> saved, int points, bool canEdit)
+    public void Update(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> draft, IReadOnlyDictionary<string, int> saved, int points, bool canEdit,
+        IReadOnlyCollection<string>? only = null)
     {
         _rank = LegacyRules.Rank(draft, Perk.Id);
         _savedRank = LegacyRules.Rank(saved, Perk.Id);
-        _addBlocker = LegacyRules.AddBlocker(trees, draft, Perk, points) ?? "";
-        _removeBlocker = LegacyRules.RemoveBlocker(trees, draft, Perk, saved) ?? "";
+        _addBlocker = LegacyRules.AddBlocker(trees, draft, Perk, points, only) ?? "";
+        _removeBlocker = LegacyRules.RemoveBlocker(trees, draft, Perk, saved, only) ?? "";
         _canAdd = canEdit && _addBlocker.Length == 0;
         _canRemove = canEdit && _removeBlocker.Length == 0;
-        _requirementMet = LegacyRules.RequirementsMet(trees, draft, Perk);
-        _requirementText = Requirement(trees, Perk, TreeName);
+        _requirementMet = LegacyRules.RequirementsMet(trees, draft, Perk, only);
+        _requirementText = Requirement(trees, Perk, TreeName, only);
         foreach (var name in new[]
                  {
                      nameof(Rank), nameof(SavedRank), nameof(RankText), nameof(IsActive), nameof(IsMaxed), nameof(IsDimmed),
@@ -692,12 +710,14 @@ public sealed class LegacyPerkView(LegacyPerk perk, string treeName) : ViewModel
             OnPropertyChanged(name);
     }
 
-    private static string Requirement(IReadOnlyList<LegacyTree> trees, LegacyPerk perk, string treeName)
+    private static string Requirement(IReadOnlyList<LegacyTree> trees, LegacyPerk perk, string treeName, IReadOnlyCollection<string>? only)
     {
         var parts = new List<string>();
-        if (perk.RequiresTreePoints > 0) parts.Add($"{perk.RequiresTreePoints} {(perk.RequiresTreePoints == 1 ? "point" : "points")} in {treeName}");
-        if (perk.RequiresPerk.Length > 0)
-            parts.Add(LegacyRules.FindPerk(trees, perk.RequiresPerk) is { } required
+        var treePoints = LegacyRules.RequiredTreePoints(perk, only);
+        var requiredId = LegacyRules.RequiredPerk(perk, only);
+        if (treePoints > 0) parts.Add($"{treePoints} {(treePoints == 1 ? "point" : "points")} in {treeName}");
+        if (requiredId.Length > 0)
+            parts.Add(LegacyRules.FindPerk(trees, requiredId) is { } required
                 ? $"{required.Name} at {required.MaxRank}/{required.MaxRank}"
                 : "a perk the realm doesn't list");
         return parts.Count == 0 ? "" : "Requires " + string.Join(" and ", parts);
