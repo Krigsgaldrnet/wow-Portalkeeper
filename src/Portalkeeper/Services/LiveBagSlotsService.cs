@@ -10,9 +10,15 @@ namespace Portalkeeper.Services;
 /// Deep Pockets raises CONTAINER_FIELD_NUM_SLOTS of the bags in the four bag slots).
 ///
 /// The same bytes as wow-server's tools/client-patches/live_bag_slots.py, 2 places in build 12340's .text.
-/// A stock client reads a bag's size once, in CGContainer_C's constructor, and keeps a copy (+0x760); a
-/// bag sent again isn't built again (the client re-enables the object it had). GetContainerNumSlots'
-/// accessor (0x706AD0) and the free-slot count (0x7069ED) read the bag's own field instead.
+/// A stock client reads a bag's size once, in CGContainer_C's constructor, and keeps a copy in the bag's
+/// slot list (+0x760: count, slot guids' address, ...); a bag sent again isn't built again (the client
+/// re-enables the object it had). GetContainerNumSlots' accessor (0x706AD0), which returns that slot
+/// list, copies the bag's own field into its count first, and the free-slot count (0x7069ED) reads the
+/// field.
+///
+/// 0.5.46 and 0.5.47 made the accessor return the field's address instead of the slot list, so the
+/// game read the slot guids from address 0 and crashed (0x75475B, ERROR #132) as soon as it walked a
+/// bag. Those bytes (<see cref="Place.Crashing"/>) are replaced like stock ones.
 ///
 /// Like the warband edit this one is optional: a stock client is safe on the realm and sees the new size
 /// after a relog, so a Wow.exe it can't edit still launches.
@@ -21,18 +27,25 @@ namespace Portalkeeper.Services;
 /// </summary>
 public static class LiveBagSlotsService
 {
-    /// <summary>File offset and RVA of a place, its stock bytes and its edited bytes.</summary>
-    internal sealed record Place(int Offset, int Rva, string Stock, string Edited)
+    /// <summary>
+    /// File offset and RVA of a place, its stock bytes, its edited bytes and, where 0.5.46/0.5.47 wrote
+    /// something else there, those crashing bytes.
+    /// </summary>
+    internal sealed record Place(int Offset, int Rva, string Stock, string Edited, string? Crashing = null)
     {
         public byte[] StockBytes { get; } = Convert.FromHexString(Stock);
         public byte[] EditedBytes { get; } = Convert.FromHexString(Edited);
+        public byte[]? CrashingBytes { get; } = Crashing is null ? null : Convert.FromHexString(Crashing);
     }
 
-    // From live_bag_slots.EDITS (VA - 0x400C00 = file offset, VA - 0x400000 = RVA):
-    // lea eax, [ecx+760h] -> mov eax, [ecx+3E0h] (0x706AD0); mov eax, [ecx+760h] -> mov eax, [edx+0] (0x7069ED).
+    // From live_bag_slots.EDITS (VA - 0x400C00 = file offset, VA - 0x400000 = RVA). 0x706AD0:
+    // lea eax, [ecx+760h] / ret / int3 x9 -> lea eax, [ecx+760h] / mov edx, [eax+4] / mov edx, [edx-8] /
+    // mov [eax], edx / ret / int3 (0.5.46: mov eax, [ecx+3E0h] / ret). 0x7069ED: mov eax, [ecx+760h] ->
+    // mov eax, [edx+0].
     internal static readonly Place[] Places =
     [
-        new(0x305ED0, 0x306AD0, "8D8160070000", "8B81E0030000"),
+        new(0x305ED0, 0x306AD0, "8D8160070000C3CCCCCCCCCCCCCCCCCC", "8D81600700008B50048B52F88910C3CC",
+            Crashing: "8B81E0030000C3CCCCCCCCCCCCCCCCCC"),
         new(0x305DED, 0x3069ED, "8B8160070000", "8B8200000000"),
     ];
 
@@ -86,18 +99,19 @@ public static class LiveBagSlotsService
     {
         var refused = new InvalidDataException(name + " isn't a 3.3.5a client that can be set up for bag sizes that change.");
         CheckLayout(original, refused);
-        bool? edited = null;
+        int stock = 0, edited = 0, crashing = 0;
         foreach (var place in Places)
         {
             var found = original.AsSpan(place.Offset, place.StockBytes.Length);
-            var isStock = found.SequenceEqual(place.StockBytes);
-            var isEdited = found.SequenceEqual(place.EditedBytes);
-            if (!isStock && !isEdited) throw refused;
-            // Partly edited: some places stock, some edited. Not touched.
-            if (edited is bool state && state != isEdited) throw refused;
-            edited = isEdited;
+            if (found.SequenceEqual(place.StockBytes)) stock++;
+            else if (found.SequenceEqual(place.EditedBytes)) edited++;
+            else if (place.CrashingBytes is { } old && found.SequenceEqual(old)) crashing++;
+            else throw refused;
         }
-        if (edited == true) return null;
+        if (edited == Places.Length) return null;
+        // Partly edited (some places stock, some edited): not touched. 0.5.46/0.5.47's file has its
+        // crashing bytes at one place and the edited ones at the other.
+        if (stock != Places.Length && (stock > 0 || crashing == 0)) throw refused;
 
         var bytes = (byte[])original.Clone();
         foreach (var place in Places) place.EditedBytes.CopyTo(bytes, place.Offset);
