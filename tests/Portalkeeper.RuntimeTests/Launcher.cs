@@ -64,6 +64,7 @@ internal static partial class Program
             // The warband camp's character select edits.
             WarbandSelectChecks(root, Check);
             GuildBankSlotsChecks(root, Check);
+            LiveBagSlotsChecks(root, Check);
             await CharacterOrderChecks(root, Check);
 
             // Saved login.
