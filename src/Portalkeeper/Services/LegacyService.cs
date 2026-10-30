@@ -17,8 +17,12 @@ namespace Portalkeeper.Services;
 /// <param name="Points">What the character may spend: min(cap, points earned on the account), or on hardcore characters only for a hardcore one.</param>
 /// <param name="Ranks">Its saved build: perk id to rank, only ranks above 0.</param>
 /// <param name="PointsMissing">The answer didn't name the points (a save's answer then keeps the listing's).</param>
+/// <param name="Cap">The character's own cap (the challenges up to its era), or 0 when the server didn't name one.</param>
+/// <param name="Era">The era the character has reached ("Classic", ...), or empty.</param>
+/// <param name="Only">The only perks the character may take (hardcore: Talented, Prodigy, Deep Pockets), or null for all of them. Requirements on perks outside it don't count.</param>
 public sealed record LegacyCharacter(uint Guid, string Name, int Race, int Class, int Gender, int Level, bool Online,
-    bool Hardcore, int Points, int Spent, IReadOnlyDictionary<string, int> Ranks, bool PointsMissing = false);
+    bool Hardcore, int Points, int Spent, IReadOnlyDictionary<string, int> Ranks, bool PointsMissing = false,
+    int Cap = 0, string Era = "", IReadOnlyList<string>? Only = null);
 
 /// <param name="Row">0..3, top to bottom.</param>
 /// <param name="Column">0..2, left to right.</param>
@@ -254,11 +258,14 @@ public sealed partial class LegacyService
     {
         var ranks = (c.Ranks ?? []).Where(r => IsPerkId(r.Key) && r.Value > 0)
             .ToDictionary(r => r.Key, r => Math.Min(r.Value, MaxRankLimit), StringComparer.Ordinal);
-        var limit = cap ?? DefaultCap;
-        var points = c.Points is int given ? Math.Clamp(given, 0, cap ?? int.MaxValue)
+        // A character's own cap (its era's) is never above the listing's.
+        var own = c.Cap is > 0 and <= 1000 ? Math.Min(c.Cap.Value, cap ?? int.MaxValue) : (int?)null;
+        var limit = own ?? cap ?? DefaultCap;
+        var points = c.Points is int given ? Math.Clamp(given, 0, own ?? cap ?? int.MaxValue)
             : Math.Min(limit, Math.Max(0, (c.Hardcore ? hardcore : total) ?? 0));
+        var only = c.Only?.Where(IsPerkId).Select(id => id!).Distinct(StringComparer.Ordinal).ToArray();
         return new LegacyCharacter(c.Guid, (c.Name ?? "").Trim(), c.Race, c.Class, c.Gender, c.Level, c.Online, c.Hardcore,
-            points, ranks.Values.Sum(), ranks, c.Points is null);
+            points, ranks.Values.Sum(), ranks, c.Points is null, own ?? 0, (c.Era ?? "").Trim(), only);
     }
 
     private static string Icon(string? icon) =>
@@ -296,7 +303,10 @@ public sealed partial class LegacyService
         [property: JsonPropertyName("hardcore")] bool Hardcore,
         [property: JsonPropertyName("points")] int? Points,
         [property: JsonPropertyName("spent")] int? Spent,
-        [property: JsonPropertyName("ranks")] Dictionary<string, int>? Ranks);
+        [property: JsonPropertyName("ranks")] Dictionary<string, int>? Ranks,
+        [property: JsonPropertyName("cap")] int? Cap = null,
+        [property: JsonPropertyName("era")] string? Era = null,
+        [property: JsonPropertyName("only")] string?[]? Only = null);
     private sealed record PerkBody(
         [property: JsonPropertyName("id")] string? Id,
         [property: JsonPropertyName("name")] string? Name,
@@ -370,27 +380,44 @@ public static class LegacyRules
     public static LegacyTree? TreeOf(IReadOnlyList<LegacyTree> trees, LegacyPerk perk) =>
         trees.FirstOrDefault(t => t.Perks.Contains(perk));
 
+    /// <summary>
+    /// The points the perk needs in the rest of its tree. A character with an only-list (hardcore)
+    /// takes just those perks, so it needs none: the server skips them too.
+    /// </summary>
+    public static int RequiredTreePoints(LegacyPerk perk, IReadOnlyCollection<string>? only = null) =>
+        only is null ? perk.RequiresTreePoints : 0;
+
+    /// <summary>The perk that has to be at max rank first, or empty; with an only-list, only one on it counts (Prodigy's Talented, not Talented's Well Rested).</summary>
+    public static string RequiredPerk(LegacyPerk perk, IReadOnlyCollection<string>? only = null) =>
+        only is null || only.Contains(perk.RequiresPerk) ? perk.RequiresPerk : "";
+
     /// <summary>The perk's requirements hold for the build (its rank and points aside).</summary>
-    public static bool RequirementsMet(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk)
+    public static bool RequirementsMet(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk,
+        IReadOnlyCollection<string>? only = null)
     {
         var tree = TreeOf(trees, perk);
-        if (tree is not null && TreeSpent(tree, ranks, perk.Id) < perk.RequiresTreePoints) return false;
-        if (perk.RequiresPerk.Length == 0) return true;
-        var required = FindPerk(trees, perk.RequiresPerk);
+        if (tree is not null && TreeSpent(tree, ranks, perk.Id) < RequiredTreePoints(perk, only)) return false;
+        var requiredId = RequiredPerk(perk, only);
+        if (requiredId.Length == 0) return true;
+        var required = FindPerk(trees, requiredId);
         // A requirement on a perk the realm doesn't list can't be met.
         return required is not null && Rank(ranks, required.Id) >= required.MaxRank;
     }
 
-    /// <summary>Why a rank can't be added, or null when it can.</summary>
-    public static string? AddBlocker(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk, int points)
+    /// <summary>Why a rank can't be added, or null when it can. <paramref name="only"/>: the only perks the character may take, or null.</summary>
+    public static string? AddBlocker(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk, int points,
+        IReadOnlyCollection<string>? only = null)
     {
         if (Rank(ranks, perk.Id) >= perk.MaxRank) return "Max rank";
+        if (only is not null && !only.Contains(perk.Id)) return OnlyBlocker(trees, only);
         var tree = TreeOf(trees, perk);
-        if (tree is not null && TreeSpent(tree, ranks, perk.Id) < perk.RequiresTreePoints)
-            return $"Requires {perk.RequiresTreePoints} {PointWord(perk.RequiresTreePoints)} in {TreeName(tree)}";
-        if (perk.RequiresPerk.Length > 0)
+        var treePoints = RequiredTreePoints(perk, only);
+        if (tree is not null && TreeSpent(tree, ranks, perk.Id) < treePoints)
+            return $"Requires {treePoints} {PointWord(treePoints)} in {TreeName(tree)}";
+        var requiredId = RequiredPerk(perk, only);
+        if (requiredId.Length > 0)
         {
-            var required = FindPerk(trees, perk.RequiresPerk);
+            var required = FindPerk(trees, requiredId);
             if (required is null) return "Requires a perk the realm doesn't list";
             if (Rank(ranks, required.Id) < required.MaxRank) return $"Requires {required.Name} at {required.MaxRank}/{required.MaxRank}";
         }
@@ -398,37 +425,55 @@ public static class LegacyRules
         return null;
     }
 
-    public static bool CanAdd(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk, int points) =>
-        AddBlocker(trees, ranks, perk, points) is null;
+    public static bool CanAdd(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk, int points,
+        IReadOnlyCollection<string>? only = null) =>
+        AddBlocker(trees, ranks, perk, points, only) is null;
+
+    /// <summary>"Hardcore characters can only take Talented, Prodigy and Deep Pockets", from the perks the realm lists.</summary>
+    public static string OnlyBlocker(IReadOnlyList<LegacyTree> trees, IReadOnlyCollection<string> only) =>
+        $"Hardcore characters {OnlyText(trees, only)}";
+
+    /// <summary>"can only take Talented, Prodigy and Deep Pockets", or "can't take Legacy perks" when the realm lists none of them.</summary>
+    public static string OnlyText(IReadOnlyList<LegacyTree> trees, IReadOnlyCollection<string> only)
+    {
+        var names = only.Select(id => FindPerk(trees, id)?.Name).OfType<string>().ToArray();
+        return names.Length switch
+        {
+            0 => "can't take Legacy perks",
+            1 => $"can only take {names[0]}",
+            _ => $"can only take {string.Join(", ", names[..^1])} and {names[^1]}",
+        };
+    }
 
     /// <summary>
     /// The perks whose requirements hold now and wouldn't once a rank of <paramref name="perk"/> is
     /// taken back. Empty: the rank can go. (Perks already broken, after the realm changed a tree,
     /// don't hold anything up, so a broken build can always be taken apart.)
     /// </summary>
-    public static IReadOnlyList<LegacyPerk> BrokenByRemoving(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk)
+    public static IReadOnlyList<LegacyPerk> BrokenByRemoving(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk,
+        IReadOnlyCollection<string>? only = null)
     {
         if (Rank(ranks, perk.Id) <= 0) return [];
         var after = With(ranks, perk.Id, Rank(ranks, perk.Id) - 1);
         return trees.SelectMany(t => t.Perks)
-            .Where(p => p.Id != perk.Id && Rank(ranks, p.Id) > 0 && RequirementsMet(trees, ranks, p) && !RequirementsMet(trees, after, p))
+            .Where(p => p.Id != perk.Id && Rank(ranks, p.Id) > 0 && RequirementsMet(trees, ranks, p, only) && !RequirementsMet(trees, after, p, only))
             .ToArray();
     }
 
     /// <summary>Why a rank can't be taken back, or null when it can. <paramref name="saved"/>: the realm's build, for permanent perks.</summary>
     public static string? RemoveBlocker(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk,
-        IReadOnlyDictionary<string, int>? saved = null)
+        IReadOnlyDictionary<string, int>? saved = null, IReadOnlyCollection<string>? only = null)
     {
         if (Rank(ranks, perk.Id) <= 0) return "No rank to take back";
         if (perk.Permanent && saved is not null && Rank(ranks, perk.Id) <= Rank(saved, perk.Id))
             return "Permanent: a saved rank can't be taken back";
-        var broken = BrokenByRemoving(trees, ranks, perk);
+        var broken = BrokenByRemoving(trees, ranks, perk, only);
         return broken.Count == 0 ? null : $"{string.Join(", ", broken.Select(p => p.Name))} {(broken.Count == 1 ? "needs" : "need")} it; take {(broken.Count == 1 ? "that" : "those")} back first";
     }
 
     public static bool CanRemove(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk,
-        IReadOnlyDictionary<string, int>? saved = null) =>
-        RemoveBlocker(trees, ranks, perk, saved) is null;
+        IReadOnlyDictionary<string, int>? saved = null, IReadOnlyCollection<string>? only = null) =>
+        RemoveBlocker(trees, ranks, perk, saved, only) is null;
 
     /// <summary>What CLEAR ALL leaves: the saved ranks of permanent perks.</summary>
     public static Dictionary<string, int> PermanentRanks(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> saved) =>
@@ -436,15 +481,17 @@ public static class LegacyRules
             .ToDictionary(p => p.Id, p => Rank(saved, p.Id), StringComparer.Ordinal);
 
     /// <summary>What's wrong with the build as a whole, as the server would see it, or null when it can be saved.</summary>
-    public static string? BuildProblem(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, int points)
+    public static string? BuildProblem(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, int points,
+        IReadOnlyCollection<string>? only = null)
     {
         foreach (var (id, rank) in ranks)
         {
             if (rank <= 0) continue;
             var perk = FindPerk(trees, id);
             if (perk is null) return "The build has a perk the realm no longer lists. Clear it and pick again.";
+            if (only is not null && !only.Contains(perk.Id)) return $"{OnlyBlocker(trees, only)}. Take {perk.Name} back.";
             if (rank > perk.MaxRank) return $"{perk.Name} is above its max rank ({perk.MaxRank}).";
-            if (!RequirementsMet(trees, ranks, perk)) return $"{perk.Name}'s requirement isn't met any more.";
+            if (!RequirementsMet(trees, ranks, perk, only)) return $"{perk.Name}'s requirement isn't met any more.";
         }
         var spent = Spent(ranks);
         if (spent > points) return $"The build spends {spent} points and the character has {points}. Take {spent - points} back.";
