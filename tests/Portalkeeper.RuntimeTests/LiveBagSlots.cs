@@ -25,10 +25,10 @@ internal static partial class Program
         check("live bags: a stock client is changed", LiveBagSlotsService.Ensure(client, exe) && LiveBagSlotsService.IsSetUp(exe));
         var edited = File.ReadAllBytes(exe);
         var changed = Enumerable.Range(0, stock.Length).Where(i => stock[i] != edited[i]).ToArray();
-        check("live bags: only the places change, 6 bytes", changed.Length == 6
+        check("live bags: only the places change, 12 bytes", changed.Length == 12
             && changed.All(i => LiveBagSlotsService.Places.Any(p => i >= p.Offset && i < p.Offset + p.StockBytes.Length)));
-        check("live bags: the slot count is read from the bag's field",
-            edited.AsSpan(0x305ED0, 7).SequenceEqual(Convert.FromHexString("8B81E0030000" + stock[0x305ED6].ToString("X2"))));
+        check("live bags: the slot list's count is refreshed from the bag's field before it's returned",
+            edited.AsSpan(0x305ED0, 16).SequenceEqual(Convert.FromHexString("8D81600700008B50048B52F88910C3CC")));
         check("live bags: the file it replaced is kept", Backups().Length == 1 && File.ReadAllBytes(Backups()[0]).AsSpan().SequenceEqual(stock));
         check("live bags: a client that's set up is left alone", !LiveBagSlotsService.Ensure(client, exe) && !LiveBagSlotsService.TryEnsure(client, exe)
             && File.ReadAllBytes(exe).AsSpan().SequenceEqual(edited) && Backups().Length == 1);
@@ -43,6 +43,20 @@ internal static partial class Program
             && CharacterListLimitService.Ensure(client, exe);
         check("live bags: with the character limit and the guild bank, either order gives the same file", bagsLast && bagsFirst
             && File.ReadAllBytes(exe).AsSpan().SequenceEqual(all) && LiveBagSlotsService.IsSetUp(exe) && GuildBankSlotsService.IsSetUp(exe));
+
+        // 0.5.46/0.5.47's crashing edit (the field's address returned at 0x706AD0) is replaced, and the
+        // result is the same file as from stock.
+        var crashing = (byte[])stock.Clone();
+        Convert.FromHexString("8B81E0030000C3CCCCCCCCCCCCCCCCCC").CopyTo(crashing, 0x305ED0);
+        LiveBagSlotsService.Places[1].EditedBytes.CopyTo(crashing, LiveBagSlotsService.Places[1].Offset);
+        File.WriteAllBytes(exe, crashing);
+        check("live bags: 0.5.47's crashing edit is not set up", !LiveBagSlotsService.IsSetUp(exe) && !LiveBagSlotsService.IsSetUpOrRefused(exe));
+        File.WriteAllBytes(exe, stock);
+        LiveBagSlotsService.Ensure(client, exe);
+        var fromStock = File.ReadAllBytes(exe);
+        File.WriteAllBytes(exe, crashing);
+        check("live bags: 0.5.47's crashing edit is replaced, the same file as from stock",
+            LiveBagSlotsService.TryEnsure(client, exe) && File.ReadAllBytes(exe).AsSpan().SequenceEqual(fromStock));
 
         // Anything else is refused by Ensure and IsSetUp, left alone by TryEnsure, and never changed.
         var foreign = Path.Combine(client, "Other.exe");
@@ -59,6 +73,9 @@ internal static partial class Program
         var partly = (byte[])stock.Clone();
         LiveBagSlotsService.Places[0].EditedBytes.CopyTo(partly, LiveBagSlotsService.Places[0].Offset);
         check("live bags: a partly edited client is refused", Refused(partly));
+        var crashingOnly = (byte[])stock.Clone();
+        Convert.FromHexString("8B81E0030000C3CCCCCCCCCCCCCCCCCC").CopyTo(crashingOnly, 0x305ED0);
+        check("live bags: the crashing bytes beside a stock place are refused", Refused(crashingOnly));
         var otherCode = (byte[])stock.Clone();
         otherCode[0x305DEE] ^= 0x01; // mov eax, [ecx+760h] at 0x7069ED
         check("live bags: different code at a place is refused", Refused(otherCode));
