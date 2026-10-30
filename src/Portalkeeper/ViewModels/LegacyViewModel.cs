@@ -71,6 +71,8 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<LegacyCharacterView> Characters { get; } = [];
     public ObservableCollection<LegacyTreeView> Trees { get; } = [];
+    /// <summary>The realm's General perks: one row above the trees, needing nothing in them.</summary>
+    public ObservableCollection<LegacyTreeView> Strips { get; } = [];
     public ObservableCollection<LegacyCategoryView> Categories { get; } = [];
     public ObservableCollection<LegacyChallengeView> Challenges { get; } = [];
 
@@ -265,17 +267,17 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
     /// <summary>Right-click: one rank less, unless another perk needs it (taken back first).</summary>
     public bool Remove(LegacyPerkView perk)
     {
-        if (!CanEdit || !LegacyRules.CanRemove(_trees, _draft, perk.Perk)) return false;
+        if (!CanEdit || !LegacyRules.CanRemove(_trees, _draft, perk.Perk, Saved)) return false;
         _draft = LegacyRules.With(_draft, perk.Perk.Id, LegacyRules.Rank(_draft, perk.Perk.Id) - 1);
         UpdateDraft();
         return true;
     }
 
-    /// <summary>An empty build; saved only with SAVE.</summary>
+    /// <summary>An empty build but for permanent perks' saved ranks; saved only with SAVE.</summary>
     public void ClearAll()
     {
         if (!CanEdit) return;
-        _draft = new(StringComparer.Ordinal);
+        _draft = LegacyRules.PermanentRanks(_trees, Saved);
         UpdateDraft();
     }
 
@@ -289,7 +291,7 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
 
     private void UpdateDraft()
     {
-        foreach (var tree in Trees) tree.Update(_trees, _draft, Saved, Available, CanEdit);
+        foreach (var tree in Trees.Concat(Strips)) tree.Update(_trees, _draft, Saved, Available, CanEdit);
         OnPropertyChanged(nameof(Draft));
         OnPropertyChanged(nameof(Spent));
         OnPropertyChanged(nameof(Available));
@@ -427,10 +429,11 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
         _trees = listing.Trees;
 
         Trees.Clear();
+        Strips.Clear();
         foreach (var tree in listing.Trees)
         {
             var view = new LegacyTreeView(tree);
-            Trees.Add(view);
+            (tree.Strip ? Strips : Trees).Add(view);
             _ = LoadIconAsync(tree.Icon, bitmap => view.IconImage = bitmap);
             foreach (var perk in view.Perks) _ = LoadIconAsync(perk.Perk.Icon, bitmap => perk.IconImage = bitmap);
         }
@@ -662,7 +665,9 @@ public sealed class LegacyPerkView(LegacyPerk perk, string treeName) : ViewModel
         ? _addBlocker
         : _rank > 0 && !_canRemove && _removeBlocker.Length > 0 ? _removeBlocker : "";
     public bool HasBlocker => BlockerText.Length > 0;
-    public string HintText => "Left-click (or +) adds a rank · right-click (or −) takes one back";
+    public string HintText => Perk.Permanent
+        ? "Left-click (or +) adds a rank · permanent: once saved, a rank stays"
+        : "Left-click (or +) adds a rank · right-click (or −) takes one back";
     public string AutomationName => $"{Name}, rank {_rank} of {MaxRank}";
 
     private string _requirementText = "";
@@ -672,7 +677,7 @@ public sealed class LegacyPerkView(LegacyPerk perk, string treeName) : ViewModel
         _rank = LegacyRules.Rank(draft, Perk.Id);
         _savedRank = LegacyRules.Rank(saved, Perk.Id);
         _addBlocker = LegacyRules.AddBlocker(trees, draft, Perk, points) ?? "";
-        _removeBlocker = LegacyRules.RemoveBlocker(trees, draft, Perk) ?? "";
+        _removeBlocker = LegacyRules.RemoveBlocker(trees, draft, Perk, saved) ?? "";
         _canAdd = canEdit && _addBlocker.Length == 0;
         _canRemove = canEdit && _removeBlocker.Length == 0;
         _requirementMet = LegacyRules.RequirementsMet(trees, draft, Perk);

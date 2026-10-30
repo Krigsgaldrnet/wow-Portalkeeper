@@ -25,10 +25,12 @@ public sealed record LegacyCharacter(uint Guid, string Name, int Race, int Class
 /// <param name="RequiresTreePoints">Points spent in the perk's tree (not counting this perk) before it can be raised.</param>
 /// <param name="RequiresPerk">A perk that has to be at its max rank first, or empty.</param>
 /// <param name="RankTexts">RankTexts[i] is what rank i+1 does.</param>
+/// <param name="Permanent">A saved rank can't be taken back (Deep Pockets).</param>
 public sealed record LegacyPerk(string Id, string Name, string Icon, int MaxRank, int Row, int Column,
-    int RequiresTreePoints, string RequiresPerk, string Description, IReadOnlyList<string> RankTexts);
+    int RequiresTreePoints, string RequiresPerk, string Description, IReadOnlyList<string> RankTexts, bool Permanent = false);
 
-public sealed record LegacyTree(string Id, string Name, string Icon, IReadOnlyList<LegacyPerk> Perks);
+/// <param name="Strip">Drawn as one row above the trees (the realm's General perks) instead of beside them.</param>
+public sealed record LegacyTree(string Id, string Name, string Icon, IReadOnlyList<LegacyPerk> Perks, bool Strip = false);
 
 /// <param name="Done">Some character on the account did it.</param>
 /// <param name="Hardcore">Some hardcore character did it: it counts for hardcore characters too.</param>
@@ -217,7 +219,8 @@ public sealed partial class LegacyService
             .Select((t, index) => new LegacyTree(
                 string.IsNullOrWhiteSpace(t.Id) ? "tree" + index : t.Id.Trim(),
                 (t.Name ?? "").Trim(), Icon(t.Icon),
-                (t.Perks ?? []).OfType<PerkBody>().Where(p => IsPerkId(p.Id) && seen.Add(p.Id!)).Select(ParsePerk).ToArray()))
+                (t.Perks ?? []).OfType<PerkBody>().Where(p => IsPerkId(p.Id) && seen.Add(p.Id!)).Select(ParsePerk).ToArray(),
+                t.Strip == true))
             .ToArray();
         var characters = (body.Characters ?? []).OfType<CharacterBody>().Where(c => c.Guid > 0)
             .Select(c => ParseCharacter(c, cap, total, hardcore)).ToArray();
@@ -238,7 +241,7 @@ public sealed partial class LegacyService
         var requires = (p.RequiresPerk ?? "").Trim();
         return new LegacyPerk(p.Id!, string.IsNullOrWhiteSpace(p.Name) ? p.Id! : p.Name.Trim(), Icon(p.Icon), max,
             Math.Clamp(p.Row, 0, 3), Math.Clamp(p.Column, 0, 2), Math.Max(0, p.RequiresTreePoints),
-            IsPerkId(requires) && requires != p.Id ? requires : "", (p.Description ?? "").Trim(), texts);
+            IsPerkId(requires) && requires != p.Id ? requires : "", (p.Description ?? "").Trim(), texts, p.Permanent == true);
     }
 
     private static LegacyCharacter ParseCharacter(CharacterBody c) => ParseCharacter(c, null, null, null);
@@ -303,12 +306,14 @@ public sealed partial class LegacyService
         [property: JsonPropertyName("column")] int Column,
         [property: JsonPropertyName("requiresTreePoints")] int RequiresTreePoints,
         [property: JsonPropertyName("requiresPerk")] string? RequiresPerk,
+        [property: JsonPropertyName("permanent")] bool? Permanent,
         [property: JsonPropertyName("description")] string? Description,
         [property: JsonPropertyName("ranks")] string?[]? Ranks);
     private sealed record TreeBody(
         [property: JsonPropertyName("id")] string? Id,
         [property: JsonPropertyName("name")] string? Name,
         [property: JsonPropertyName("icon")] string? Icon,
+        [property: JsonPropertyName("strip")] bool? Strip,
         [property: JsonPropertyName("perks")] PerkBody?[]? Perks);
     private sealed record ChallengeBody(
         [property: JsonPropertyName("id")] uint Id,
@@ -345,7 +350,8 @@ public sealed partial class LegacyService
 /// max rank, with a point left, with <see cref="LegacyPerk.RequiresTreePoints"/> spent in its tree
 /// (its own ranks don't count) and, when it names one, <see cref="LegacyPerk.RequiresPerk"/> at max
 /// rank. A rank is taken back only when no other perk's requirement it meets would break: the draft
-/// refuses rather than cascading, so what's on screen is always what the player picked.
+/// refuses rather than cascading, so what's on screen is always what the player picked. A
+/// <see cref="LegacyPerk.Permanent"/> perk's saved ranks are never taken back.
 /// </summary>
 public static class LegacyRules
 {
@@ -409,16 +415,25 @@ public static class LegacyRules
             .ToArray();
     }
 
-    /// <summary>Why a rank can't be taken back, or null when it can.</summary>
-    public static string? RemoveBlocker(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk)
+    /// <summary>Why a rank can't be taken back, or null when it can. <paramref name="saved"/>: the realm's build, for permanent perks.</summary>
+    public static string? RemoveBlocker(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk,
+        IReadOnlyDictionary<string, int>? saved = null)
     {
         if (Rank(ranks, perk.Id) <= 0) return "No rank to take back";
+        if (perk.Permanent && saved is not null && Rank(ranks, perk.Id) <= Rank(saved, perk.Id))
+            return "Permanent: a saved rank can't be taken back";
         var broken = BrokenByRemoving(trees, ranks, perk);
         return broken.Count == 0 ? null : $"{string.Join(", ", broken.Select(p => p.Name))} {(broken.Count == 1 ? "needs" : "need")} it; take {(broken.Count == 1 ? "that" : "those")} back first";
     }
 
-    public static bool CanRemove(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk) =>
-        RemoveBlocker(trees, ranks, perk) is null;
+    public static bool CanRemove(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, LegacyPerk perk,
+        IReadOnlyDictionary<string, int>? saved = null) =>
+        RemoveBlocker(trees, ranks, perk, saved) is null;
+
+    /// <summary>What CLEAR ALL leaves: the saved ranks of permanent perks.</summary>
+    public static Dictionary<string, int> PermanentRanks(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> saved) =>
+        trees.SelectMany(t => t.Perks).Where(p => p.Permanent && Rank(saved, p.Id) > 0)
+            .ToDictionary(p => p.Id, p => Rank(saved, p.Id), StringComparer.Ordinal);
 
     /// <summary>What's wrong with the build as a whole, as the server would see it, or null when it can be saved.</summary>
     public static string? BuildProblem(IReadOnlyList<LegacyTree> trees, IReadOnlyDictionary<string, int> ranks, int points)
