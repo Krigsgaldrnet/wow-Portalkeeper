@@ -33,7 +33,7 @@ internal static partial class Program
                "requiresTreePoints":9,"requiresPerk":"diplomat","description":"","ranks":["One"]},
               {"id":"Bad-Id","name":"Broken","maxRank":1,"row":3,"column":0}]},
            {"id":"resourcefulness","name":"Resourcefulness","icon":"inv_misc_bag_10",
-            "perks":[{"id":"thrifty","name":"Thrifty","icon":"inv_misc_coin_01","maxRank":12,"row":7,"column":5,"ranks":[]}]},
+            "perks":[{"id":"thrifty","name":"Thrifty","icon":"inv_misc_coin_01","maxRank":25,"row":7,"column":5,"ranks":[]}]},
            {"id":"professions","name":"Professions","icon":"trade_engineering",
             "perks":[{"id":"gatherer","name":"Gatherer","icon":"trade_herbalism","maxRank":5,"row":0,"column":0,"ranks":["a","b","c","d","e"]},
                      {"id":"well_rested","name":"Duplicate","maxRank":1,"row":0,"column":1}]}],
@@ -397,13 +397,16 @@ internal static partial class Program
         const string generalJson = """
             {"cap":16,"earned":{"total":16,"hardcore":0},
              "characters":[{"guid":21,"name":"Pockets","race":1,"class":1,"gender":0,"level":20,"online":true,
-                            "hardcore":false,"points":16,"spent":3,"ranks":{"deep_pockets":2,"gatherer":1}}],
+                            "hardcore":false,"points":16,"spent":3,"ranks":{"deep_pockets":2,"gatherer":1}},
+                           {"guid":22,"name":"Deeper","race":1,"class":1,"gender":0,"level":20,"online":false,
+                            "hardcore":false,"points":16,"spent":10,"ranks":{"deep_pockets":10}}],
              "trees":[
                {"id":"professions","name":"Professions","icon":"trade_engineering",
                 "perks":[{"id":"gatherer","name":"Gatherer","maxRank":5,"row":0,"column":0,"ranks":["a","b","c","d","e"]}]},
                {"id":"general","name":"General","icon":"inv_misc_bag_19","strip":true,
-                "perks":[{"id":"deep_pockets","name":"Deep Pockets","icon":"inv_misc_bag_felclothbag","maxRank":3,"row":0,"column":0,
-                          "requiresTreePoints":0,"requiresPerk":"","permanent":true,"description":"Bigger bags.","ranks":["+2","+4","+6"]}]}],
+                "perks":[{"id":"deep_pockets","name":"Deep Pockets","icon":"inv_misc_bag_felclothbag","maxRank":10,"row":0,"column":0,
+                          "requiresTreePoints":0,"requiresPerk":"","permanent":true,"description":"Bigger bags.",
+                          "ranks":["+1","+2","+3","+4","+5","+6","+7","+8","+9","+10"]}]}],
              "challenges":[]}
             """;
         var general = (await Service(new FakeLegacyPortal { ListingJson = generalJson }).GetListingAsync(session))!;
@@ -411,6 +414,9 @@ internal static partial class Program
         check("legacy: a strip tree and a permanent perk are read; other trees and perks aren't either",
             general.Trees is [{ Strip: false }, { Id: "general", Strip: true }] && pockets.Permanent
             && !LegacyRules.FindPerk(general.Trees, "gatherer")!.Permanent && !listing.Trees.Any(t => t.Strip));
+        check("legacy: a perk with 10 ranks keeps them all, and a saved rank 10 isn't cut down",
+            pockets is { MaxRank: 10, RankTexts.Count: 10 } && pockets.RankTexts[9] == "+10"
+            && general.Characters[1].Ranks["deep_pockets"] == 10);
         var savedPockets = new Dictionary<string, int> { ["deep_pockets"] = 2 };
         check("legacy rules: a permanent perk keeps its saved ranks, ranks above them can go",
             LegacyRules.RemoveBlocker(general.Trees, savedPockets, pockets, savedPockets) == "Permanent: a saved rank can't be taken back"
