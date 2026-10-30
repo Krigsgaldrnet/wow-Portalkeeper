@@ -105,6 +105,7 @@ public sealed class RealmLaunchService
                 ManagedPath.Resolve(fullClientDirectory, "WTF/Config.wtf"));
             ManagedPath.Resolve(fullClientDirectory, ".portalkeeper/backups/realmlist");
             ManagedPath.Resolve(fullClientDirectory, ".portalkeeper/backups/config");
+            ManagedPath.Resolve(fullClientDirectory, RaisedSettingsPath);
         }
         WriteRealmlist(realmlistPath, realm.Address, fullClientDirectory);
         var settings = new List<(string Name, string Value)>(ClientSettings);
@@ -126,7 +127,10 @@ public sealed class RealmLaunchService
                     settings.Add((agreement, "1"));
             }
         }
+        var raises = RealmBranding.IsBuiltIn(realm) ? PendingRaises(fullClientDirectory) : [];
+        settings.AddRange(raises.Where(s => NeedsRaise(ReadConfigSetting(fullClientDirectory, s.Name), s.Value)));
         WriteConfigSettings(Path.Combine(fullClientDirectory, "WTF", "Config.wtf"), settings, fullClientDirectory);
+        MarkRaised(fullClientDirectory, raises);
         var process = LaunchWow(wowExecutable, fullClientDirectory, sourceClientDirectory, realm.Client.Executable);
 
         return new RealmLaunchResult
@@ -289,6 +293,39 @@ public sealed class RealmLaunchService
     // showQuestTrackingTooltips = quest progress lines on mob tooltips, which DragonUI's quest icons read.
     internal static readonly (string Name, string Value)[] ClientSettings =
         { ("checkAddonVersion", "0"), ("showQuestTrackingTooltips", "1") };
+
+    // Game options raised once per client, then the player's: farclip 777 is View Distance at its top
+    // (the client stops there), the distance the realm's clear-air fog (wow-server patch-z98) is drawn
+    // for. RaisedSettingsPath keeps a "name=value" line for each one raised, so a lower value the
+    // player picks afterwards stays, and a new value here raises it once more. Built-in realm only.
+    internal static readonly (string Name, string Value)[] RaisedOnceSettings = { ("farclip", "777") };
+
+    internal const string RaisedSettingsPath = ".portalkeeper/raised-settings.txt";
+
+    /// <summary>The settings in <see cref="RaisedOnceSettings"/> this client hasn't had raised yet.</summary>
+    internal static IReadOnlyList<(string Name, string Value)> PendingRaises(string clientDirectory)
+    {
+        var path = Path.Combine(Path.GetFullPath(clientDirectory), RaisedSettingsPath);
+        var done = File.Exists(path)
+            ? File.ReadAllLines(path).Select(line => line.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return RaisedOnceSettings.Where(s => !done.Contains($"{s.Name}={s.Value}")).ToArray();
+    }
+
+    /// <summary>True when Config.wtf has no number for the CVar or one below <paramref name="value"/>.</summary>
+    internal static bool NeedsRaise(string? current, string value) =>
+        !double.TryParse(current, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var number)
+        || number < double.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Remembers <paramref name="raised"/> as done for this client.</summary>
+    internal static void MarkRaised(string clientDirectory, IReadOnlyList<(string Name, string Value)> raised)
+    {
+        if (raised.Count == 0) return;
+        var path = Path.Combine(Path.GetFullPath(clientDirectory), RaisedSettingsPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.AppendAllLines(path, raised.Select(s => $"{s.Name}={s.Value}"));
+    }
 
     private static readonly Regex GamePasswordLine = new(
         @"^([ \t]*SET[ \t]+accountList[ \t]+)""" + Regex.Escape(GamePasswordPrefix) + @"[^\r\n]*",
