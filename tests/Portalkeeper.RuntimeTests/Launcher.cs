@@ -63,6 +63,7 @@ internal static partial class Program
             CharacterListLimitChecks(root, Check);
             // The warband camp's character select edits.
             WarbandSelectChecks(root, Check);
+            GuildBankSlotsChecks(root, Check);
             await CharacterOrderChecks(root, Check);
 
             // Saved login.
