@@ -392,6 +392,45 @@ internal static partial class Program
             await legacy.LoadAsync();
             check("legacy page: an account without characters is told so", legacy is { HasNoCharacters: true, SelectedCharacter: null, CanSave: false, ShowPerkTools: false });
         }
+
+        // The General strip and a permanent perk (Deep Pockets).
+        const string generalJson = """
+            {"cap":16,"earned":{"total":16,"hardcore":0},
+             "characters":[{"guid":21,"name":"Pockets","race":1,"class":1,"gender":0,"level":20,"online":true,
+                            "hardcore":false,"points":16,"spent":3,"ranks":{"deep_pockets":2,"gatherer":1}}],
+             "trees":[
+               {"id":"professions","name":"Professions","icon":"trade_engineering",
+                "perks":[{"id":"gatherer","name":"Gatherer","maxRank":5,"row":0,"column":0,"ranks":["a","b","c","d","e"]}]},
+               {"id":"general","name":"General","icon":"inv_misc_bag_19","strip":true,
+                "perks":[{"id":"deep_pockets","name":"Deep Pockets","icon":"inv_misc_bag_felclothbag","maxRank":3,"row":0,"column":0,
+                          "requiresTreePoints":0,"requiresPerk":"","permanent":true,"description":"Bigger bags.","ranks":["+2","+4","+6"]}]}],
+             "challenges":[]}
+            """;
+        var general = (await Service(new FakeLegacyPortal { ListingJson = generalJson }).GetListingAsync(session))!;
+        var pockets = LegacyRules.FindPerk(general.Trees, "deep_pockets")!;
+        check("legacy: a strip tree and a permanent perk are read; other trees and perks aren't either",
+            general.Trees is [{ Strip: false }, { Id: "general", Strip: true }] && pockets.Permanent
+            && !LegacyRules.FindPerk(general.Trees, "gatherer")!.Permanent && !listing.Trees.Any(t => t.Strip));
+        var savedPockets = new Dictionary<string, int> { ["deep_pockets"] = 2 };
+        check("legacy rules: a permanent perk keeps its saved ranks, ranks above them can go",
+            LegacyRules.RemoveBlocker(general.Trees, savedPockets, pockets, savedPockets) == "Permanent: a saved rank can't be taken back"
+            && LegacyRules.CanRemove(general.Trees, new Dictionary<string, int> { ["deep_pockets"] = 3 }, pockets, savedPockets)
+            && LegacyRules.CanRemove(general.Trees, savedPockets, pockets));
+        using (var legacy = Legacy(new FakeLegacyPortal { ListingJson = generalJson }))
+        {
+            await legacy.LoadAsync();
+            LegacyPerkView Perk(string id) => legacy.Trees.Concat(legacy.Strips).SelectMany(t => t.Perks).First(p => p.Perk.Id == id);
+            check("legacy page: the strip tree goes above the trees, not beside them",
+                legacy.Trees.Count == 1 && legacy.Strips is [{ Title: "General" }] && legacy.Strips[0].Perks.Count == 1);
+            check("legacy page: a saved permanent rank can't be taken back, and says why",
+                !legacy.Remove(Perk("deep_pockets")) && Perk("deep_pockets") is { Rank: 2, CanRemove: false, CanAdd: true }
+                && Perk("deep_pockets").BlockerText == "Permanent: a saved rank can't be taken back");
+            check("legacy page: a new rank of it can go again before SAVE",
+                legacy.Add(Perk("deep_pockets")) && Perk("deep_pockets").CanRemove && legacy.Remove(Perk("deep_pockets")) && !legacy.HasUnsavedChanges);
+            legacy.ClearAll();
+            check("legacy page: CLEAR ALL keeps the permanent perk's saved ranks",
+                Perk("deep_pockets").Rank == 2 && Perk("gatherer").Rank == 0 && legacy is { Spent: 2, HasUnsavedChanges: true });
+        }
     }
 
     private sealed class FakeLegacyPortal : HttpMessageHandler
