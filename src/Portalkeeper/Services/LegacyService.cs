@@ -73,7 +73,7 @@ public sealed partial class LegacyService
     /// <summary>The cap when the server doesn't name one.</summary>
     public const int DefaultCap = 16;
     /// <summary>The highest rank a perk can have (the portal refuses more).</summary>
-    public const int MaxRankLimit = 9;
+    public const int MaxRankLimit = 20;
     /// <summary>The most perks a build may name (the portal refuses more).</summary>
     public const int MaxRanksInBuild = 40;
 
