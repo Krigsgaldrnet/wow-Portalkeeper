@@ -328,14 +328,15 @@ public sealed class RealmLaunchService
     }
 
     /// <summary>
-    /// True when Config.wtf has a line the launcher never writes (gxApi, locale, hwDetect...), so the
+    /// True when Config.wtf has a line the launcher never writes (gxApi, locale, hwDetect...; launchers
+    /// around 0.5.39 also wrote evermoreCharOrder), so the
     /// game has saved it at least once; a file with only the launcher's lines is one a crashed or
     /// never-started first run left behind.
     /// </summary>
     internal static bool GameSavedConfig(string config)
     {
         var launcherNames = ClientSettings.Select(s => s.Name).Concat(RaisedOnceSettings.Select(s => s.Name))
-            .Concat(AgreementSettings).Concat(["realmName", "accountName", "accountList"])
+            .Concat(AgreementSettings).Concat(["realmName", "accountName", "accountList", "evermoreCharOrder"])
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return Regex.Matches(config, @"^[ \t]*SET[ \t]+(\S+)", RegexOptions.IgnoreCase | RegexOptions.Multiline)
             .Any(match => !launcherNames.Contains(match.Groups[1].Value));
