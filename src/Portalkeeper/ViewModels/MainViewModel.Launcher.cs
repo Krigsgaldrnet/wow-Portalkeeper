@@ -871,7 +871,11 @@ public sealed partial class MainViewModel
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
         {
-            _syncStatus = UserErrorService.Format(ex, "Couldn't set World of Warcraft up for the character select screen and guild bank; CHECK AGAIN retries");
+            // A Wow.exe these edits refuse (another build, or another tool's bytes at their places) can't be
+            // fixed by retrying: only the realm's own file can.
+            _syncStatus = ex is InvalidDataException
+                ? ex.Message + " Put the realm's Wow.exe back (reinstall the client, or copy Wow.exe from it), then CHECK AGAIN."
+                : UserErrorService.Format(ex, "Couldn't set World of Warcraft up for the character select screen and guild bank; CHECK AGAIN retries");
             UpdateLaunchReadinessStatus();
             return false;
         }
