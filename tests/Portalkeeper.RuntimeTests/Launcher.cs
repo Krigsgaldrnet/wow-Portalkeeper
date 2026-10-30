@@ -130,14 +130,9 @@ internal static partial class Program
             Directory.CreateDirectory(Path.Combine(farClient, "WTF"));
             var farWtf = Path.Combine(farClient, "WTF", "Config.wtf");
             File.WriteAllText(farWtf, "SET locale \"enUS\"\r\nSET farclip \"477\"\r\n");
-            void LaunchSettings()
-            {
-                var raises = RealmLaunchService.PendingRaises(farClient);
-                var settings = RealmLaunchService.ClientSettings.Concat(raises.Where(s =>
-                    RealmLaunchService.NeedsRaise(RealmLaunchService.ReadConfigSetting(farClient, s.Name), s.Value))).ToList();
-                RealmLaunchService.WriteConfigSettings(farWtf, settings, farClient);
-                RealmLaunchService.MarkRaised(farClient, raises);
-            }
+            void LaunchSettings(string client = "", bool builtIn = true) =>
+                RealmLaunchService.WriteLaunchSettings(client.Length > 0 ? client : farClient,
+                    RealmLaunchService.ClientSettings.ToList(), builtIn);
             Check("a new client has farclip to raise", RealmLaunchService.PendingRaises(farClient).Any(s => s.Name == "farclip" && s.Value == "777"));
             LaunchSettings();
             Check("a lower farclip is raised to 777 in place", File.ReadAllText(farWtf).Contains("SET farclip \"777\"\r\n", StringComparison.Ordinal)
@@ -153,8 +148,19 @@ internal static partial class Program
                 && RealmLaunchService.NeedsRaise("far", "777"));
             var farFresh = Path.Combine(root, "farclip-fresh");
             Directory.CreateDirectory(farFresh);
-            Check("a client without Config.wtf has farclip to raise", RealmLaunchService.PendingRaises(farFresh).Count == 1
-                && RealmLaunchService.NeedsRaise(RealmLaunchService.ReadConfigSetting(farFresh, "farclip"), "777"));
+            LaunchSettings(farFresh);
+            Check("a client without Config.wtf gets farclip 777", RealmLaunchService.ReadConfigSetting(farFresh, "farclip") == "777");
+            Check("a new client's raise waits for the game's first Config.wtf", RealmLaunchService.PendingRaises(farFresh).Count == 1);
+            File.WriteAllText(Path.Combine(farFresh, "WTF", "Config.wtf"), "SET hwDetect \"0\"\r\nSET farclip \"507\"\r\n");
+            LaunchSettings(farFresh);
+            Check("a farclip the first start's hardware detection lowered is raised again", RealmLaunchService.ReadConfigSetting(farFresh, "farclip") == "777"
+                && RealmLaunchService.PendingRaises(farFresh).Count == 0);
+            var farOther = Path.Combine(root, "farclip-other-realm");
+            Directory.CreateDirectory(Path.Combine(farOther, "WTF"));
+            File.WriteAllText(Path.Combine(farOther, "WTF", "Config.wtf"), "SET farclip \"400\"\r\n");
+            LaunchSettings(farOther, builtIn: false);
+            Check("another realm's client keeps its farclip", RealmLaunchService.ReadConfigSetting(farOther, "farclip") == "400"
+                && !File.Exists(Path.Combine(farOther, ".portalkeeper", "raised-settings.txt")));
 
             // Client files the realm dropped from its client torrent (TheraWoW's login screen).
             var removeClient = Path.Combine(root, "remove", "WoW");

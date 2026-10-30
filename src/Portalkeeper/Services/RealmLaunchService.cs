@@ -127,10 +127,7 @@ public sealed class RealmLaunchService
                     settings.Add((agreement, "1"));
             }
         }
-        var raises = RealmBranding.IsBuiltIn(realm) ? PendingRaises(fullClientDirectory) : [];
-        settings.AddRange(raises.Where(s => NeedsRaise(ReadConfigSetting(fullClientDirectory, s.Name), s.Value)));
-        WriteConfigSettings(Path.Combine(fullClientDirectory, "WTF", "Config.wtf"), settings, fullClientDirectory);
-        MarkRaised(fullClientDirectory, raises);
+        WriteLaunchSettings(fullClientDirectory, settings, RealmBranding.IsBuiltIn(realm));
         var process = LaunchWow(wowExecutable, fullClientDirectory, sourceClientDirectory, realm.Client.Executable);
 
         return new RealmLaunchResult
@@ -302,14 +299,41 @@ public sealed class RealmLaunchService
 
     internal const string RaisedSettingsPath = ".portalkeeper/raised-settings.txt";
 
-    /// <summary>The settings in <see cref="RaisedOnceSettings"/> this client hasn't had raised yet.</summary>
+    /// <summary>
+    /// Writes the launch's settings to the client's Config.wtf, with the <see cref="RaisedOnceSettings"/>
+    /// the client hasn't had raised yet when <paramref name="raiseOnce"/> (the built-in realm). A raise
+    /// is only remembered once Config.wtf was there before the launch: a new client's first start runs
+    /// the game's hardware detection, which may lower it again, so the next launch raises it then.
+    /// </summary>
+    internal static void WriteLaunchSettings(string clientDirectory, List<(string Name, string Value)> settings, bool raiseOnce)
+    {
+        var configPath = Path.Combine(clientDirectory, "WTF", "Config.wtf");
+        var gameWroteConfig = File.Exists(configPath);
+        var raises = raiseOnce ? PendingRaises(clientDirectory) : [];
+        settings.AddRange(raises.Where(s => NeedsRaise(ReadConfigSetting(clientDirectory, s.Name), s.Value)));
+        WriteConfigSettings(configPath, settings, clientDirectory);
+        if (gameWroteConfig)
+            MarkRaised(clientDirectory, raises);
+    }
+
+    /// <summary>
+    /// The settings in <see cref="RaisedOnceSettings"/> this client hasn't had raised yet; none when the
+    /// list can't be read, so a launch never fails over it.
+    /// </summary>
     internal static IReadOnlyList<(string Name, string Value)> PendingRaises(string clientDirectory)
     {
         var path = Path.Combine(Path.GetFullPath(clientDirectory), RaisedSettingsPath);
-        var done = File.Exists(path)
-            ? File.ReadAllLines(path).Select(line => line.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        return RaisedOnceSettings.Where(s => !done.Contains($"{s.Name}={s.Value}")).ToArray();
+        try
+        {
+            var done = File.Exists(path)
+                ? File.ReadAllLines(path).Select(line => line.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            return RaisedOnceSettings.Where(s => !done.Contains($"{s.Name}={s.Value}")).ToArray();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
     }
 
     /// <summary>True when Config.wtf has no number for the CVar or one below <paramref name="value"/>.</summary>
@@ -318,13 +342,22 @@ public sealed class RealmLaunchService
             System.Globalization.CultureInfo.InvariantCulture, out var number)
         || number < double.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
 
-    /// <summary>Remembers <paramref name="raised"/> as done for this client.</summary>
+    /// <summary>
+    /// Remembers <paramref name="raised"/> as done for this client. A list that can't be written doesn't
+    /// stop the launch; the raise is then tried again next time.
+    /// </summary>
     internal static void MarkRaised(string clientDirectory, IReadOnlyList<(string Name, string Value)> raised)
     {
         if (raised.Count == 0) return;
         var path = Path.Combine(Path.GetFullPath(clientDirectory), RaisedSettingsPath);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.AppendAllLines(path, raised.Select(s => $"{s.Name}={s.Value}"));
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.AppendAllLines(path, raised.Select(s => $"{s.Name}={s.Value}"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 
     private static readonly Regex GamePasswordLine = new(
