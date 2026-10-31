@@ -48,6 +48,7 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
     private bool _showChallenges;
     private LegacyCharacterView? _selectedCharacter;
     private LegacyCategoryView? _selectedCategory;
+    private LegacyChallengeSortView _selectedSort = LegacyChallengeSortView.Choices[0];
     private LegacyCharacterView? _pendingCharacter;
     private LauncherPage? _pendingPage;
     private bool _pendingClose;
@@ -126,6 +127,19 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
         }
     }
     public bool HasNoChallenges => _hasListing && Challenges.Count == 0;
+
+    public IReadOnlyList<LegacyChallengeSortView> Sorts => LegacyChallengeSortView.Choices;
+
+    /// <summary>How each category's challenges are ordered; easiest first by default. Kept across categories and refreshes.</summary>
+    public LegacyChallengeSortView SelectedSort
+    {
+        get => _selectedSort;
+        set
+        {
+            if (value is null || !SetProperty(ref _selectedSort, value)) return;
+            FilterChallenges();
+        }
+    }
 
     // ---------------------------------------------------------
     // Points
@@ -500,9 +514,9 @@ public sealed class LegacyViewModel : ViewModelBase, IDisposable
     {
         Challenges.Clear();
         var key = _selectedCategory?.Key ?? LegacyCategoryView.AllKey;
-        // Not done first is how the game lists them too; each half in the realm's order.
-        foreach (var challenge in _challenges
-                     .Where(c => key == LegacyCategoryView.AllKey || (c.Category.Length > 0 ? c.Category : "Other") == key)
+        // Not done first is how the game lists them too; each half in the picked order.
+        foreach (var challenge in _selectedSort.Apply(_challenges
+                     .Where(c => key == LegacyCategoryView.AllKey || (c.Category.Length > 0 ? c.Category : "Other") == key))
                      .OrderBy(c => c.Done))
             Challenges.Add(new LegacyChallengeView(challenge));
         OnPropertyChanged(nameof(HasNoChallenges));
@@ -737,6 +751,31 @@ public sealed class LegacyCategoryView(string key, string title, int done, int t
     public string CountText => $"{Done} / {Total}";
     public bool IsComplete => Total > 0 && Done == Total;
     public bool IsSelected { get => _isSelected; set => SetProperty(ref _isSelected, value); }
+}
+
+/// <summary>An order for the challenges. Ties keep the realm's order (the sorts are stable).</summary>
+public sealed class LegacyChallengeSortView
+{
+    public static readonly IReadOnlyList<LegacyChallengeSortView> Choices =
+    [
+        new("easy", "Easiest first", challenges => challenges.OrderBy(c => c.Difficulty)),
+        new("hard", "Hardest first", challenges => challenges.OrderByDescending(c => c.Difficulty)),
+        new("realm", "Realm order", challenges => challenges),
+    ];
+
+    private readonly Func<IEnumerable<LegacyChallenge>, IEnumerable<LegacyChallenge>> _order;
+
+    private LegacyChallengeSortView(string key, string title, Func<IEnumerable<LegacyChallenge>, IEnumerable<LegacyChallenge>> order)
+    {
+        Key = key;
+        Title = title;
+        _order = order;
+    }
+
+    public string Key { get; }
+    public string Title { get; }
+    public IEnumerable<LegacyChallenge> Apply(IEnumerable<LegacyChallenge> challenges) => _order(challenges);
+    public override string ToString() => Title;
 }
 
 public sealed class LegacyChallengeView(LegacyChallenge challenge)

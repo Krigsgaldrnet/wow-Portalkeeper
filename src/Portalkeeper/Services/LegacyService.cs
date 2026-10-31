@@ -40,8 +40,9 @@ public sealed record LegacyTree(string Id, string Name, string Icon, IReadOnlyLi
 /// <param name="Hardcore">Some hardcore character did it: it counts for hardcore characters too.</param>
 /// <param name="By">The first character that did it, or empty.</param>
 /// <param name="At">When that was, or null.</param>
+/// <param name="Difficulty">About the level it's done at, for the easiest-first sort; 0 when the server didn't name one.</param>
 public sealed record LegacyChallenge(uint Id, string Category, string Name, string Description, bool Done, bool Hardcore,
-    string By, DateTimeOffset? At);
+    string By, DateTimeOffset? At, int Difficulty = 0);
 
 /// <param name="EarnedTotal">Legacy points earned on the whole account.</param>
 /// <param name="EarnedHardcore">The part of them earned on hardcore characters.</param>
@@ -230,7 +231,7 @@ public sealed partial class LegacyService
             .Select(c => ParseCharacter(c, cap, total, hardcore)).ToArray();
         var challenges = (body.Challenges ?? []).OfType<ChallengeBody>()
             .Select(c => new LegacyChallenge(c.Id, (c.Category ?? "").Trim(), (c.Name ?? "").Trim(), (c.Description ?? "").Trim(),
-                c.Done || c.Hardcore, c.Hardcore, (c.By ?? "").Trim(), Time(c.At)))
+                c.Done || c.Hardcore, c.Hardcore, (c.By ?? "").Trim(), Time(c.At), Math.Max(c.Difficulty ?? 0, 0)))
             .ToArray();
         var cachedAt = body.CachedAt ?? body.CachedAtSnake;
         return new LegacyListing(cap, total, hardcore, characters, trees, challenges,
@@ -333,7 +334,8 @@ public sealed partial class LegacyService
         [property: JsonPropertyName("done")] bool Done,
         [property: JsonPropertyName("hardcore")] bool Hardcore,
         [property: JsonPropertyName("by")] string? By,
-        [property: JsonPropertyName("at")] long At);
+        [property: JsonPropertyName("at")] long At,
+        [property: JsonPropertyName("difficulty")] int? Difficulty);
     private sealed record EarnedBody(
         [property: JsonPropertyName("total")] int Total,
         [property: JsonPropertyName("hardcore")] int Hardcore);
