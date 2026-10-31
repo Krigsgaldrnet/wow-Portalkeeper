@@ -38,10 +38,10 @@ internal static partial class Program
             "perks":[{"id":"gatherer","name":"Gatherer","icon":"trade_herbalism","maxRank":5,"row":0,"column":0,"ranks":["a","b","c","d","e"]},
                      {"id":"well_rested","name":"Duplicate","maxRank":1,"row":0,"column":1}]}],
          "challenges":[
-           {"id":101,"category":"Classes","name":"Warrior Initiate","description":"Reach level 20 with a Warrior.","done":true,"hardcore":false,"by":"Pawster","at":1761300000},
-           {"id":102,"category":"Classes","name":"Mage Initiate","description":"Reach level 20 with a Mage.","done":false,"hardcore":false,"by":"","at":0},
-           {"id":201,"category":"Dungeons","name":"Deadmines","description":"Kill Van Cleef.","done":true,"hardcore":true,"by":"Ironhide","at":1761000000},
-           {"id":301,"category":"","name":"Odd One","description":"","done":false,"hardcore":false,"by":"","at":0}],
+           {"id":101,"category":"Classes","name":"Warrior Initiate","description":"Reach level 20 with a Warrior.","done":true,"hardcore":false,"by":"Pawster","at":1761300000,"difficulty":40},
+           {"id":102,"category":"Classes","name":"Mage Initiate","description":"Reach level 20 with a Mage.","done":false,"hardcore":false,"by":"","at":0,"difficulty":20},
+           {"id":201,"category":"Dungeons","name":"Deadmines","description":"Kill Van Cleef.","done":true,"hardcore":true,"by":"Ironhide","at":1761000000,"difficulty":24},
+           {"id":301,"category":"","name":"Odd One","description":"","done":false,"hardcore":false,"by":"","at":0,"difficulty":30}],
          "cachedAt":1761400000}
         """;
 
@@ -80,12 +80,13 @@ internal static partial class Program
         check("legacy: challenges are read with who did them and when",
             listing.Challenges[0] is { Id: 101, Category: "Classes", Done: true, Hardcore: false, By: "Pawster" }
             && listing.Challenges[0].At == DateTimeOffset.FromUnixTimeSeconds(1761300000)
-            && listing.Challenges[1] is { Done: false, By: "", At: null } && listing.Challenges[2] is { Done: true, Hardcore: true });
+            && listing.Challenges[1] is { Done: false, By: "", At: null } && listing.Challenges[2] is { Done: true, Hardcore: true }
+            && listing.Challenges[0].Difficulty == 40 && listing.Challenges[3].Difficulty == 30);
 
         portal.ListingJson = """{"earned":null,"characters":null,"trees":[{"perks":null}],"challenges":[{"id":1,"hardcore":true}]}""";
         listing = await Service(portal).GetListingAsync(session);
         check("legacy: missing fields don't break the listing; a hardcore-done challenge is done",
-            listing is { Cap: LegacyService.DefaultCap, EarnedTotal: 0, Characters.Count: 0, Trees.Count: 1 } && listing.Challenges[0].Done);
+            listing is { Cap: LegacyService.DefaultCap, EarnedTotal: 0, Characters.Count: 0, Trees.Count: 1 } && listing.Challenges[0] is { Done: true, Difficulty: 0 });
         portal.Status = 404;
         check("legacy: 404 means the realm has Legacy off", await Service(portal).GetListingAsync(session) is null);
         portal.Status = 503;
@@ -319,6 +320,18 @@ internal static partial class Program
                 && legacy.Challenges[0].ByText == "");
             legacy.SelectedCategory = legacy.Categories.First(c => c.Title == "Dungeons");
             check("legacy page: a challenge done on a hardcore character is marked", legacy.Challenges.Single() is { Hardcore: true, Done: true });
+            legacy.SelectedCategory = legacy.Categories[0];
+            check("legacy page: challenges sort easiest first by default, not done first",
+                legacy.SelectedSort.Key == "easy" && legacy.Challenges.Select(c => c.Challenge.Id).SequenceEqual([102u, 301u, 201u, 101u]));
+            legacy.SelectedSort = legacy.Sorts.First(s => s.Key == "hard");
+            check("legacy page: hardest first",
+                legacy.Challenges.Select(c => c.Challenge.Id).SequenceEqual([301u, 102u, 101u, 201u]));
+            legacy.SelectedSort = legacy.Sorts.First(s => s.Key == "realm");
+            check("legacy page: realm order",
+                legacy.Challenges.Select(c => c.Challenge.Id).SequenceEqual([102u, 301u, 101u, 201u]));
+            legacy.SelectedCategory = legacy.Categories.First(c => c.Title == "Classes");
+            check("legacy page: the sort stays when the category changes",
+                legacy.SelectedSort.Key == "realm" && legacy.Challenges.Select(c => c.Challenge.Id).SequenceEqual([102u, 101u]));
         }
 
         // A save while the character went away: the server says so, the listing is asked again.
