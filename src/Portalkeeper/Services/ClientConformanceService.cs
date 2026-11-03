@@ -20,7 +20,7 @@ public sealed record ClientConformance(IReadOnlyList<string> Different, IReadOnl
 /// Keeps the game folder exactly what the realm ships: the files of its client torrent plus the realm
 /// patches realm.conf lists. Anything else there (another MPQ, a dll, an exe) is deleted. Only what make-client-torrent.py leaves out of the torrent is
 /// the player's: the top-level Interface (addons), WTF, Cache, Logs, Screenshots and Errors folders,
-/// realmlist.wtf and Config.wtf, and logs and temp files. The rules below must match that script.
+/// realmlist.wtf, Config.wtf and LuxVelum.ini, and logs and temp files. The rules below must match that script.
 /// </summary>
 public static class ClientConformanceService
 {
@@ -30,7 +30,7 @@ public static class ClientConformanceService
     private static readonly HashSet<string> PlayerDirectories = new(StringComparer.OrdinalIgnoreCase)
         { "wtf", "cache", "logs", "interface", "screenshots", "errors", ".portalkeeper" };
     private static readonly HashSet<string> PlayerFiles = new(StringComparer.OrdinalIgnoreCase)
-        { "realmlist.wtf", "config.wtf", "thumbs.db", "desktop.ini", ".ds_store" };
+        { "realmlist.wtf", "config.wtf", "luxvelum.ini", "thumbs.db", "desktop.ini", ".ds_store" };
     private static readonly string[] PlayerSuffixes = { ".log", ".tmp", ".bak" };
 
     /// <summary>

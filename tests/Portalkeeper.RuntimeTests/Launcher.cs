@@ -673,6 +673,7 @@ internal static partial class Program
             Path.Combine(client, "Interface", "AddOns", "Mine", "Mine.toc"),
             Path.Combine(client, "WTF", "Config.wtf"),
             Path.Combine(client, "Data", "enUS", "realmlist.wtf"),
+            Path.Combine(client, "LuxVelum.ini"),
             Path.Combine(client, "Screenshots", "WoWScrnShot.jpg"),
             Path.Combine(client, "Cache", "WDB", "enUS", "creaturecache.wdb"),
             Path.Combine(client, "Logs", "Sound.log"),
@@ -698,7 +699,7 @@ internal static partial class Program
             && extras.All(e => result.Extra.Contains(RetiredPatchService.Normalize(Path.GetRelativePath(client, e)))));
         check("realm patches, addons, settings, Cache, Logs and Screenshots aren't extras",
             !result.Extra.Any(e => e.Contains("patch-K", StringComparison.OrdinalIgnoreCase) || e.StartsWith("Interface/") || e.StartsWith("WTF/")
-                || e.StartsWith("Cache/") || e.StartsWith("Logs/") || e.StartsWith("Screenshots/") || e.EndsWith("realmlist.wtf") || e.StartsWith(".portalkeeper/")));
+                || e.StartsWith("Cache/") || e.StartsWith("Logs/") || e.StartsWith("Screenshots/") || e.EndsWith("realmlist.wtf") || e == "LuxVelum.ini" || e.StartsWith(".portalkeeper/")));
 
         var common = Path.Combine(client, "Data", "common.MPQ");
         var patchC = Path.Combine(client, "Data", "patch-C.mpq");
