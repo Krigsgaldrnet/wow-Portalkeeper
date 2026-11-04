@@ -92,6 +92,10 @@ public sealed class PortalkeeperSettings
     public DateTimeOffset? CombatLogLastSent { get; set; }
     // Send the game's crash reports to the realm without asking (CrashReportService).
     public bool SendCrashReports { get; set; }
+    // On until turned off: the game's Lua errors go to the realm (LuaErrorService).
+    public bool SendLuaErrors { get; set; } = true;
+    // When the portal last confirmed Lua errors, shown under the option.
+    public DateTimeOffset? LuaErrorsLastSent { get; set; }
     // The last ENTER REALM: the home screen's patch notes are the ones merged since.
     public DateTimeOffset? LastPlayedUtc { get; set; }
     // A client install that was paused or interrupted, resumed by INSTALL WOW.

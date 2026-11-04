@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Text.Json;
@@ -86,12 +85,7 @@ public sealed partial class MainViewModel
         get
         {
             if (HasCombatLogStatus) return _combatLogStatus;
-            if (_savedSettings.CombatLogLastSent is not { } sent) return "Nothing sent yet.";
-            var local = sent.ToLocalTime();
-            var day = local.Date == DateTime.Today ? "today"
-                : local.Date == DateTime.Today.AddDays(-1) ? "yesterday"
-                : local.ToString("MMM d", CultureInfo.CurrentCulture);
-            return $"Last sent {day} at {local.ToString("t", CultureInfo.CurrentCulture)}.";
+            return _savedSettings.CombatLogLastSent is { } sent ? LastSentText(sent) : "Nothing sent yet.";
         }
     }
 
@@ -104,7 +98,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(CombatLogStatus));
         OnPropertyChanged(nameof(HasCombatLogStatus));
         OnPropertyChanged(nameof(CombatLogSharingDetail));
-        OnPropertyChanged(nameof(FooterText));
+        NotifyFooterStatus();
     }
 
     /// <summary>Shows how an upload ended, then clears it after a while (unless something else replaced it).</summary>
