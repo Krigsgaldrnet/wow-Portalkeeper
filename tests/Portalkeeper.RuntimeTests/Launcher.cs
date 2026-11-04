@@ -413,6 +413,9 @@ internal static partial class Program
             // Installed optional addons updated in the background.
             await AddonUpdateChecks(root, Check);
 
+            // A failed addon install rolls back; backup sets of a multi-folder addon.
+            await AddonRollbackChecks(root, Check);
+
             // The coin shop.
             await ShopChecks(Check);
 
