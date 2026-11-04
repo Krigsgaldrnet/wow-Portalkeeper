@@ -408,8 +408,14 @@ internal static partial class Program
             // Combat logs shared with the realm: the launcher's own addon and the upload.
             await CombatLogChecks(root, Check);
 
+            // The game's Lua errors sent to the realm: the launcher's own addon and the request.
+            await LuaErrorChecks(root, Check);
+
             // Installed optional addons updated in the background.
             await AddonUpdateChecks(root, Check);
+
+            // A failed addon install rolls back; backup sets of a multi-folder addon.
+            await AddonRollbackChecks(root, Check);
 
             // The coin shop.
             await ShopChecks(Check);

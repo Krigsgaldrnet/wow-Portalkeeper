@@ -1,0 +1,7 @@
+## Interface: 30300
+## Title: Portalkeeper Errors
+## Notes: Records Lua errors so they can be sent to the realm. Portalkeeper writes this addon while "Send Lua errors to the realm" is on and deletes it when it's off.
+## Author: Portalkeeper
+## Version: 1.0
+## SavedVariables: PortalkeeperErrorsDB
+Errors.lua

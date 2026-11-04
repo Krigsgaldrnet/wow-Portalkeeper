@@ -126,9 +126,9 @@ public sealed partial class MainViewModel
         get
         {
             var text = RealmBranding.LauncherName + " · " + ApplicationVersion;
-            // A combat log upload (and how it went) takes the sharing summary's place, in its own
-            // brighter line next to this one (CombatLogStatus).
-            if (HasCombatLogStatus) return text + " · ";
+            // A combat log upload (and how it went) or Lua errors going out take the sharing summary's
+            // place, in their own brighter line next to this one (FooterStatus).
+            if (HasFooterStatus) return text + " · ";
             return SharingStatus.Length > 0 ? text + " · " + SharingStatus : text;
         }
     }

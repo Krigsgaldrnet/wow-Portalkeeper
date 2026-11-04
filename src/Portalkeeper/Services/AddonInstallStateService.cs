@@ -61,9 +61,26 @@ public sealed class AddonInstallStateService
             InstalledFolders = installedFolders ?? new List<string>()
         };
 
-        File.WriteAllText(
-            path,
-            JsonSerializer.Serialize(state, JsonOptions));
+        // Replaced whole: a write that stops part way (a full disk) must not cost the launcher the state it had.
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(
+                temporary,
+                JsonSerializer.Serialize(state, JsonOptions));
+            File.Move(temporary, path, true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // On Windows, File.Move's errors don't name the file.
+            throw new IOException($"Could not save {path}: {ex.Message}", ex);
+        }
+        finally
+        {
+            // A leftover is harmless, and throwing here would replace the error above.
+            try { if (File.Exists(temporary)) File.Delete(temporary); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
     }
 
     public void Delete(
