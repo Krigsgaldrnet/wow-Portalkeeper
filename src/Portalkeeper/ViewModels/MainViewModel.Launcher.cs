@@ -42,6 +42,7 @@ public sealed partial class MainViewModel
         try { RealmBranding.SeedRealmStore(); }
         catch (Exception ex) { _configurationStatus = UserErrorService.Format(ex, "The built-in realm could not be set up"); }
         _patchService.Downloader = DownloadPatchViaTorrentAsync;
+        StartOutsideGameWatch();
         _ = RestoreLoginAsync();
         _ = RunSharingStatusLoopAsync();
         StartSelfUpdates();
@@ -231,6 +232,7 @@ public sealed partial class MainViewModel
     private async Task<bool> DownloadClientAsync(LauncherSession session, string? folder, bool repair)
     {
         var done = false;
+        _stoppedForOutsideGame = false;
         _isInstallingClient = true;
         _isRepairingClient = repair;
         _installCancel = new CancellationTokenSource();
@@ -252,6 +254,16 @@ public sealed partial class MainViewModel
                     : Path.Combine(folder, TorrentService.NameOf(torrent));
             else
                 throw new InvalidOperationException("Choose where to install World of Warcraft.");
+
+            // Before anything is written. The watch stops a download a game starts under later.
+            _installTarget = target;
+            var executable = GameExecutableName;
+            if (await Task.Run(() => RunningGameDetector.IsRunningFrom([target], executable)) == true)
+            {
+                _stoppedForOutsideGame = true;
+                SetInstallStatus(repair ? UpdateHeldForGame : $"World of Warcraft is running from {target}. Close it, then try again.", _installPercent);
+                return false;
+            }
 
             // Never download into a folder that holds something other than WoW. A WoW client is the
             // base for the realm's client; a folder an earlier install started is fine too, even for an
@@ -321,7 +333,9 @@ public sealed partial class MainViewModel
         }
         catch (OperationCanceledException)
         {
-            SetInstallStatus(repair ? "Update paused. TRY AGAIN continues where it stopped."
+            SetInstallStatus(_stoppedForOutsideGame
+                ? repair ? UpdateHeldForGame : "Install paused because World of Warcraft is running. Close it, then click RESUME INSTALL."
+                : repair ? "Update paused. TRY AGAIN continues where it stopped."
                 : "Install paused. Click RESUME INSTALL to continue where it stopped.", _installPercent);
         }
         catch (LauncherApiException ex) when (ex.Status == HttpStatusCode.NotFound) { SetInstallStatus("The realm doesn't offer a client download yet.", 0); }
@@ -330,6 +344,7 @@ public sealed partial class MainViewModel
         {
             _isInstallingClient = false;
             _isRepairingClient = false;
+            _installTarget = null;
             _installCancel?.Dispose();
             _installCancel = null;
             try { SaveSettings(); } catch (Exception) { }
@@ -340,6 +355,8 @@ public sealed partial class MainViewModel
         }
         return done;
     }
+
+    private const string UpdateHeldForGame = "Update paused because World of Warcraft is running. It carries on by itself once you close the game.";
 
     private static bool SameDirectory(string a, string b)
     {
@@ -443,7 +460,8 @@ public sealed partial class MainViewModel
         }
         catch (Exception ex)
         {
-            _syncStatus = UserErrorService.Format(ex, "Couldn't update the realm's files; CHECK AGAIN retries");
+            // A game seen since the last file isn't a failure: this runs again once it exits.
+            _syncStatus = IsGameRunning ? "" : UserErrorService.Format(ex, "Couldn't update the realm's files; CHECK AGAIN retries");
         }
         finally
         {
@@ -600,6 +618,7 @@ public sealed partial class MainViewModel
 
     private async Task SyncRequiredAndShareCoreAsync()
     {
+        await LookForOutsideGameAsync();
         // By itself: combat logs never wait for patches, and patches never wait for an upload.
         _ = StartCombatLogSharingAsync();
         _ = RefreshCrashReportOfferAsync();
@@ -708,6 +727,8 @@ public sealed partial class MainViewModel
                 return SetClientCheck(ClientCheck.NotRealmClient);
             if (result.Extra.Count > 0)
             {
+                await LookForOutsideGameAsync();
+                if (Overtaken()) return _clientCheck == ClientCheck.Ok;
                 var deleted = await Task.Run(() => ClientConformanceService.DeleteNonConforming(root,
                     result with { TooLong = [] }));
                 if (deleted > 0) RefreshPatches();
@@ -832,14 +853,17 @@ public sealed partial class MainViewModel
             try { torrent = _clientTorrent ??= await _accountService.GetClientTorrentAsync(session); }
             catch (LauncherApiException ex) when (ex.Status == HttpStatusCode.NotFound) { torrent = null; }
             catch (Exception) { return; } // offline or the portal is down: try again next sync
+            await LookForOutsideGameAsync();
+            if (IsGameRunning) return;
 
             var current = realm.Patches.Where(p => p.InstallMode == PatchInstallMode.File)
                 .Select(p => Path.Combine(p.InstallDirectory, p.FileName));
             var status = new Progress<string>(SetSyncStatus);
             var result = await RetiredPatchService.CleanupAsync(EffectiveClientPath, RealmIdentity.FromRealm(realm), current,
                 RealmBranding.IsBuiltIn(realm) ? RealmBranding.RetiredPatches : [],
-                torrent, DownloadClientFileAsync, StopAllSharingAsync, status, CancellationToken.None);
+                torrent, DownloadClientFileAsync, StopAllSharingAsync, status, _outsideGameStop.Token);
             if (result.Removed > 0) RefreshPatches();
+            if (IsGameRunning) return;
             if (torrent is not null && RealmBranding.IsBuiltIn(realm))
             {
                 var root = EffectiveClientPath;
@@ -850,6 +874,7 @@ public sealed partial class MainViewModel
                 : "";
             UpdateLaunchReadinessStatus();
         }
+        catch (OperationCanceledException) when (IsGameRunning) { } // runs again once it exits
         catch (Exception ex)
         {
             _syncStatus = UserErrorService.Format(ex, "Couldn't remove the realm's old patches; CHECK AGAIN retries");
@@ -876,6 +901,8 @@ public sealed partial class MainViewModel
                 .Select(p => (ManagedPath.Resolve(root, Path.Combine(ManagedPath.Relative(p.InstallDirectory),
                     ManagedPath.Relative(p.FileName, true))), p.Sha256)).ToArray();
             if (wanted.All(w => File.Exists(w.Item1))) return;
+            await LookForOutsideGameAsync();
+            if (IsGameRunning) return;
             SetSyncStatus("Updating realm files...");
             // Copying and hashing a few hundred MB: not on the UI thread.
             var adopted = await Task.Run(() => RetiredPatchService.AdoptRenamed(root, identity, wanted));
@@ -904,6 +931,7 @@ public sealed partial class MainViewModel
             var executable = ClientService.FindWowExecutable(root, realm.Client.Executable)
                 ?? throw new FileNotFoundException("Wow.exe was not found in the client folder.");
             if (await Task.Run(() => LongPatchNameService.IsSetUp(executable))) return true;
+            await LookForOutsideGameAsync();
             if (IsGameRunning || _isInstallingClient) return false;
             if (_clientCheck != ClientCheck.Ok && !ClientConformanceService.IsRealmInstall(root)) return false;
             await StopAllSharingAsync();
@@ -948,6 +976,7 @@ public sealed partial class MainViewModel
                 && WarbandSelectService.IsSetUpOrRefused(executable) && LiveBagSlotsService.IsSetUpOrRefused(executable)
                 && M2CacheFullPathsService.IsSetUpOrRefused(executable) && MoonPhasesService.IsSetUpOrRefused(executable)))
                 return true;
+            await LookForOutsideGameAsync();
             if (IsGameRunning || _isInstallingClient) return false;
             if (_clientCheck != ClientCheck.Ok && !ClientConformanceService.IsRealmInstall(root)) return false;
             await StopAllSharingAsync();
@@ -993,7 +1022,7 @@ public sealed partial class MainViewModel
     /// <summary>Notes the realm patches installed now, so they can be taken out cleanly later.</summary>
     private void RecordInstalledPatches()
     {
-        if (!ClientValid || IsIsolatedRealm || _realmInfo is not { } realm) return;
+        if (!ClientValid || IsIsolatedRealm || IsGameRunning || _realmInfo is not { } realm) return;
         try
         {
             RetiredPatchService.RecordCurrent(EffectiveClientPath, RealmIdentity.FromRealm(realm), Patches
@@ -1029,6 +1058,8 @@ public sealed partial class MainViewModel
 
         var client = Path.GetFullPath(ClientPath);
         if (_savedSettings.ClientCacheVersions.TryGetValue(client, out var seen) && seen == version) return;
+        await LookForOutsideGameAsync();
+        if (IsGameRunning) return; // asked again by the sync after it exits
         PatchService.ClearClientCache(client);
         _savedSettings.ClientCacheVersions[client] = version;
         try { SaveSettings(); } catch (Exception) { }
@@ -1064,9 +1095,10 @@ public sealed partial class MainViewModel
     /// <summary>Updates the optional addons the player installed (never installs new ones), right now.</summary>
     public Task UpdateInstalledAddonsAsync() => RunComponentOperationAsync(async () =>
     {
+        var stop = _outsideGameStop.Token;
         foreach (var addon in OptionalAddons.Where(CanUpdateInstalled).Select(a => a.Definition).ToArray())
         {
-            await _addonInstallerService.InstallOrUpdateAsync(EffectiveClientPath, addon);
+            await _addonInstallerService.InstallOrUpdateAsync(EffectiveClientPath, addon, stop);
             _optionalUpdateFailures.Remove(addon.Id);
         }
         await LoadAddonsAsync();
@@ -1166,7 +1198,8 @@ public sealed partial class MainViewModel
         {
             bytes = await PatchTorrentAsync(session, fileName, patch.Sha256);
             // Give up on the torrent (and let PatchService use plain HTTP) after a minute without progress.
-            using var stalled = new CancellationTokenSource(PatchStallTimeout);
+            using var stalled = CancellationTokenSource.CreateLinkedTokenSource(_outsideGameStop.Token);
+            stalled.CancelAfter(PatchStallTimeout);
             long lastDone = -1;
             var progress = new Progress<TorrentProgress>(p =>
             {

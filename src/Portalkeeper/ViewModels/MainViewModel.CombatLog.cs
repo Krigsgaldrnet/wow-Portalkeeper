@@ -218,8 +218,7 @@ public sealed partial class MainViewModel
             // On Windows a log the game still has open can't be moved. Under Wine it can, and what the
             // game wrote afterwards would be lost: leave it to the next run while a game is running.
             var collect = !OperatingSystem.IsLinux()
-                || ClientService.FindWowExecutable(client, _realmInfo!.Client.Executable) is not { } executable
-                || !RealmLaunchService.IsLinuxGameProcessRunning(executable);
+                || RunningGameDetector.IsRunningFrom([client], _realmInfo!.Client.Executable) != true;
             // A log from before the player opted in is renamed first; until that works nothing is collected.
             if (collect && !SetAsideEarlierCombatLog()) collect = false;
             using var run = CancellationTokenSource.CreateLinkedTokenSource(_combatLogShutdown.Token);

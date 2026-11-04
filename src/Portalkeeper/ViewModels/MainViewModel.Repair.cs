@@ -33,8 +33,15 @@ public sealed partial class MainViewModel
 
     public async Task RepairGameAsync()
     {
+        await LookForOutsideGameAsync();
         var session = _session;
+        if (_outsideGameRunning)
+        {
+            SetRepairStatus("World of Warcraft is running. Close it, then run REPAIR GAME.");
+            return;
+        }
         if (!CanRepairGame || session is null) return;
+        _stoppedForOutsideGame = false;
         _isRepairingGame = true;
         _isInstallingClient = true; // the home card shows the repair; DownloadClientAsync takes over below
         _isRepairingClient = true;
@@ -97,6 +104,7 @@ public sealed partial class MainViewModel
                 ? failedAddons.Count == 0
                     ? $"Repaired at {DateTime.Now:t}: every game file was checked, and the cache and the realm's addons were renewed."
                     : $"Repaired at {DateTime.Now:t}, but these addons couldn't be downloaded: {string.Join(", ", failedAddons)}."
+                : _stoppedForOutsideGame ? "The repair stopped because World of Warcraft is running. Close it, then run REPAIR GAME again."
                 : stopped is { Length: > 0 } && !stopped.Contains("paused", StringComparison.OrdinalIgnoreCase)
                     ? stopped + " Run REPAIR GAME again to finish."
                     : "The repair was paused before it finished. Run REPAIR GAME again to check every file.");
