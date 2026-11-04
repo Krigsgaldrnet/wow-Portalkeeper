@@ -195,12 +195,7 @@ public sealed class AddonInstallerService
             {
                 var notRestored = RollBack(writtenDirectories, backups, backupSet);
                 if (notRestored.Count > 0)
-                {
-                    throw new IOException(
-                        $"{installError.Message} The old copy of {string.Join(", ", notRestored.Select(Path.GetFileName))} " +
-                        $"could not be put back and is still in {backupSet}.",
-                        installError);
-                }
+                    throw NotPutBack(installError, notRestored, backupSet);
 
                 throw;
             }
@@ -221,10 +216,16 @@ public sealed class AddonInstallerService
         }
     }
 
+    private static IOException NotPutBack(Exception cause, List<string> notRestored, string backupSet) =>
+        new(
+            $"{cause.Message} The old copy of {string.Join(", ", notRestored.Select(Path.GetFileName))} " +
+            $"could not be put back and is still in {backupSet}.",
+            cause);
+
     /// <summary>
-    /// Undoes a failed install: deletes only the folders it wrote (a folder that couldn't be moved to its
-    /// backup is still the player's) and moves each backup back. Never throws, so the install's own error
-    /// is the one reported. Returns the backups that are still in the backup set.
+    /// Undoes a failed install or uninstall: deletes only the folders it wrote (a folder that couldn't be
+    /// moved to its backup is still the player's) and moves each backup back. Never throws, so the
+    /// operation's own error is the one reported. Returns the backups that are still in the backup set.
     /// </summary>
     private static List<string> RollBack(
         List<string> writtenDirectories,
@@ -273,34 +274,49 @@ public sealed class AddonInstallerService
         // Load install state to see all installed folders for this addon
         var state = _installStateService.Load(clientDirectory, addon.Id);
         
-        // If we have InstalledFolders saved (new style), remove all of them
-        if (state.InstalledFolders != null && state.InstalledFolders.Count > 0)
+        // If we have InstalledFolders saved (new style), remove all of them;
+        // otherwise fall back to original single-folder behavior for backward compatibility
+        var hasInstalledFolders = state.InstalledFolders != null && state.InstalledFolders.Count > 0;
+        var folderNames = hasInstalledFolders ? state.InstalledFolders! : new List<string> { addon.Folder };
+
+        // All checked before anything moves, so a refused folder leaves the addon whole.
+        var destinations = new List<string>();
+        foreach (var folderName in folderNames)
         {
-            var backupSet = Guid.NewGuid().ToString("N");
-            foreach (var folderName in state.InstalledFolders)
-            {
-                var destination = ManagedPath.Resolve(clientDirectory, Path.Combine("Interface", "AddOns", folderName));
-                ManagedRuntimeWriteGuard.Check(clientDirectory, destination);
-                if (!Directory.Exists(destination)) continue;
-                
-                var backup = ManagedPath.Resolve(clientDirectory, Path.Combine(".portalkeeper", "backups", addon.Id, backupSet, folderName));
-                Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
-                Directory.Move(destination, backup);
-            }
-        }
-        else
-        {
-            // Fallback to original single-folder behavior for backward compatibility
-            var destination = ManagedPath.Resolve(clientDirectory, Path.Combine("Interface", "AddOns", addon.Folder));
+            // One level only: an empty name in a hand-edited state file would otherwise be all of AddOns.
+            ManagedPath.Relative(folderName, true);
+            var destination = ManagedPath.Resolve(clientDirectory, Path.Combine("Interface", "AddOns", folderName));
             ManagedRuntimeWriteGuard.Check(clientDirectory, destination);
-            if (!Directory.Exists(destination)) return;
-            var backup = ManagedPath.Resolve(clientDirectory, Path.Combine(".portalkeeper", "backups", addon.Id, Guid.NewGuid().ToString("N"), addon.Folder));
-            Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
-            Directory.Move(destination, backup);
+            destinations.Add(destination);
+        }
+        if (!hasInstalledFolders && !Directory.Exists(destinations[0])) return;
+
+        var backupSet = NewBackupSet(clientDirectory, addon);
+        var backups = new List<(string Backup, string Destination)>();
+        try
+        {
+            foreach (var destination in destinations)
+            {
+                if (!Directory.Exists(destination)) continue;
+
+                var backup = Path.Combine(backupSet, Path.GetFileName(destination));
+                Directory.CreateDirectory(backupSet);
+                Directory.Move(destination, backup);
+                backups.Add((backup, destination));
+            }
+
+            // A folder put back by hand later isn't one this launcher installed.
+            _installStateService.Delete(clientDirectory, addon.Id);
+        }
+        catch (Exception removeError)
+        {
+            var notRestored = RollBack(new List<string>(), backups, backupSet);
+            if (notRestored.Count > 0)
+                throw NotPutBack(removeError, notRestored, backupSet);
+
+            throw;
         }
 
-        // A folder put back by hand later isn't one this launcher installed.
-        _installStateService.Delete(clientDirectory, addon.Id);
         PruneBackups(clientDirectory, addon.Id);
     }
 
@@ -549,7 +565,7 @@ public sealed class AddonInstallerService
         return string.Empty;
     }
 
-    // One install or update is one set, however many folders the addon has: PruneBackups keeps sets.
+    // One update or uninstall is one set, however many folders the addon has: PruneBackups keeps sets.
     private static string NewBackupSet(
         string clientDirectory,
         AddonDefinition addon)

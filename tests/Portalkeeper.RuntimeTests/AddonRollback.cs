@@ -60,7 +60,7 @@ internal static partial class Program
         Directory.CreateDirectory(statePath);
         var stateError = await Update(stateFailed, "2.0");
         check("a failed install reports the error that stopped it, not one from the rollback",
-            stateError is UnauthorizedAccessException && stateError.Message.Contains("pair.json"));
+            stateError is IOException or UnauthorizedAccessException && stateError.Message.Contains("pair.json"));
         check("a failed install puts every old folder back under its own name",
             Holds(stateFailed, "Alpha", "1.0") && Holds(stateFailed, "Beta", "1.0"));
         check("a rolled back install leaves no backup set behind", BackupSets(stateFailed).Length == 0);
@@ -76,7 +76,8 @@ internal static partial class Program
 
         // Fails while backing up. The archive's folder order isn't fixed, so hold each folder in turn: one of the two
         // runs has the other folder already moved to a backup, the other has it still waiting to move.
-        if (!HoldStopsAMove(root))
+        var holdWorks = HoldStopsAMove(root);
+        if (!holdWorks)
         {
             Console.WriteLine("SKIP  a folder that can't be moved (here a held folder still moves, as it does for root)");
         }
@@ -110,6 +111,91 @@ internal static partial class Program
         installer.Remove(removed, Pair("1.0"));
         check("uninstalling a two-folder addon makes one backup set with both folders",
             BackupSets(removed) is [var set] && Directory.GetDirectories(set).Length == 2 && !Directory.Exists(AddOn(removed, "Alpha")));
+
+        // An uninstall that can't finish leaves the addon as it was: in place, and still the launcher's.
+        var states = new AddonInstallStateService();
+        bool AsItWas(string client) =>
+            Holds(client, "Alpha", "1.0") && Holds(client, "Beta", "1.0") && BackupSets(client).Length == 0 &&
+            states.Load(client, "pair") is { Version: "1.0" } state && state.InstalledFolders.Contains("Alpha") && state.InstalledFolders.Contains("Beta");
+
+        // The last folder the state file lists is refused, so the others would already be moved.
+        foreach (var badName in new[] { "../Escape", "Nested/Folder", "" })
+        {
+            var refused = await NewClientAtVersion1();
+            states.Save(refused, "pair", "1.0", "", ["Alpha", "Beta", badName]);
+            Exception? refusedError = null;
+            try { installer.Remove(refused, Pair("1.0")); }
+            catch (Exception ex) { refusedError = ex; }
+            check($"an uninstall listing the folder '{badName}' says so and moves nothing", refusedError is InvalidDataException && AsItWas(refused));
+        }
+
+        // A state file with no folder list: the one folder the addon names, or nothing at all when that's gone.
+        var legacy = await NewClientAtVersion1();
+        states.Save(legacy, "pair", "1.0", "", []);
+        installer.Remove(legacy, Pair("1.0"));
+        check("an uninstall with no folder list moves the addon's own folder and forgets the state",
+            !Directory.Exists(AddOn(legacy, "Alpha")) && Holds(legacy, "Beta", "1.0") && BackupSets(legacy).Length == 1 &&
+            !File.Exists(Path.Combine(legacy, ".portalkeeper", "addons", "pair.json")));
+        states.Save(legacy, "pair", "1.0", "", []);
+        installer.Remove(legacy, Pair("1.0"));
+        check("an uninstall with no folder list and no folder changes nothing",
+            BackupSets(legacy).Length == 1 && File.Exists(Path.Combine(legacy, ".portalkeeper", "addons", "pair.json")));
+
+        if (holdWorks)
+        {
+            foreach (var held in new[] { "Alpha", "Beta" })
+            {
+                var stuck = await NewClientAtVersion1();
+                Exception? removeError = null;
+                using (HoldFolder(AddOn(stuck, held), held))
+                {
+                    try { installer.Remove(stuck, Pair("1.0")); }
+                    catch (Exception ex) { removeError = ex; }
+                }
+                check($"an uninstall stopped by a stuck folder ({held}) says which",
+                    removeError is not null && removeError.Message.Contains(Path.Combine("AddOns", held)));
+                check($"an uninstall stopped by a stuck folder ({held}) leaves the addon as it was", AsItWas(stuck));
+                installer.Remove(stuck, Pair("1.0"));
+                check($"an uninstall stopped by a stuck folder ({held}) works once it's free",
+                    !Directory.Exists(AddOn(stuck, "Alpha")) && !Directory.Exists(AddOn(stuck, "Beta")) &&
+                    BackupSets(stuck) is [var only] && Directory.GetDirectories(only).Length == 2 &&
+                    states.Load(stuck, "pair").InstalledFolders.Count == 0);
+            }
+        }
+
+        // The state file is replaced whole, so a write that stops part way can't cost the launcher the one it had.
+        // Both of these rely on Unix: its read-only folders, and replacing a file that's open.
+        if (!OperatingSystem.IsWindows())
+        {
+            if (holdWorks)
+            {
+                var unsaved = await NewClientAtVersion1();
+                Exception? saveError;
+                using (HoldFolder(Path.Combine(unsaved, ".portalkeeper", "addons"), "pair"))
+                    saveError = await Update(unsaved, "2.0");
+                check("a state file that can't be saved fails the install", saveError is not null);
+                check("a state file that can't be saved leaves the old one and the old folders", AsItWas(unsaved));
+
+                var undeleted = await NewClientAtVersion1();
+                Exception? deleteError = null;
+                using (HoldFolder(Path.Combine(undeleted, ".portalkeeper", "addons"), "pair"))
+                {
+                    try { installer.Remove(undeleted, Pair("1.0")); }
+                    catch (Exception ex) { deleteError = ex; }
+                }
+                check("a state file that can't be deleted fails the uninstall and leaves the addon as it was",
+                    deleteError is not null && AsItWas(undeleted));
+            }
+
+            var replaced = await NewClientAtVersion1();
+            var replacedPath = Path.Combine(replaced, ".portalkeeper", "addons", "pair.json");
+            using var before = new StreamReader(new FileStream(replacedPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete));
+            states.Save(replaced, "pair", "2.0", "", ["Alpha", "Beta"]);
+            check("saving the state file replaces it rather than writing over it",
+                before.ReadToEnd().Contains("\"Version\": \"1.0\"") && states.Load(replaced, "pair").Version == "2.0");
+            check("saving the state file leaves no temporary file",
+                Directory.GetFiles(Path.GetDirectoryName(replacedPath)!).Length == 1);
+        }
     }
 
     // Tries HoldFolder on a folder of its own, so a machine where it doesn't work skips the checks that need it instead
