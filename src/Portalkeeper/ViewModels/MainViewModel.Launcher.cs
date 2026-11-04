@@ -145,6 +145,7 @@ public sealed partial class MainViewModel
         _sessionStore.Clear();
         ForgetCombatLogOffer();
         ForgetCrashReportOffer();
+        ForgetLuaErrorOffer();
         ForgetShop();
         ForgetLegacy();
         ForgetCharacters();
@@ -182,6 +183,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(RememberedAccountName));
         OnPropertyChanged(nameof(CombatLogSharingOffered));
         OnPropertyChanged(nameof(CrashReportsOffered));
+        OnPropertyChanged(nameof(LuaErrorsOffered));
         OnPropertyChanged(nameof(ShopAvailable));
         OnPropertyChanged(nameof(LegacyAvailable));
         OnPropertyChanged(nameof(CharactersAvailable));
@@ -594,6 +596,7 @@ public sealed partial class MainViewModel
         // By itself: combat logs never wait for patches, and patches never wait for an upload.
         _ = StartCombatLogSharingAsync();
         _ = RefreshCrashReportOfferAsync();
+        _ = StartLuaErrorsAsync();
         _ = ProbeShopAsync();
         _ = ProbeLegacyAsync();
         _ = ProbeCharactersAsync();
