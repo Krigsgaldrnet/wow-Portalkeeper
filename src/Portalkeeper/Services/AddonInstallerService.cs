@@ -125,7 +125,9 @@ public sealed class AddonInstallerService
                 destinationDirectories.Add(destinationDirectory);
             }
 
-            var backupDirectories = new List<string>();
+            var backupSet = NewBackupSet(clientDirectory, addon);
+            var backups = new List<(string Backup, string Destination)>();
+            var writtenDirectories = new List<string>();
             var hadExistingInstall = false;
             foreach (var destDir in destinationDirectories)
             {
@@ -136,7 +138,6 @@ public sealed class AddonInstallerService
                 }
             }
 
-            var backupCreated = false;
             cancellationToken.ThrowIfCancellationRequested();
 
             try
@@ -148,23 +149,19 @@ public sealed class AddonInstallerService
                         var destDir = destinationDirectories[i];
                         if (Directory.Exists(destDir))
                         {
-                            var backupDirectory = CreateBackupPath(
-                                clientDirectory,
-                                addon,
+                            var backupDirectory = Path.Combine(
+                                backupSet,
                                 Path.GetFileName(destDir));
 
-                            Directory.CreateDirectory(
-                                Path.GetDirectoryName(backupDirectory)!);
+                            Directory.CreateDirectory(backupSet);
 
                             Directory.Move(
                                 destDir,
                                 backupDirectory);
 
-                            backupDirectories.Add(backupDirectory);
+                            backups.Add((backupDirectory, destDir));
                         }
                     }
-
-                    backupCreated = true;
                 }
 
                 // preparedDirectory lives under the system temp directory, which may
@@ -177,7 +174,8 @@ public sealed class AddonInstallerService
                 {
                     var preparedDir = preparedDirectories[i];
                     var destDir = destinationDirectories[i];
-                    
+
+                    writtenDirectories.Add(destDir);
                     CopyDirectory(
                         preparedDir,
                         destDir);
@@ -193,28 +191,15 @@ public sealed class AddonInstallerService
                     addon.SourceCommit,
                     installedFolders);
             }
-            catch
+            catch (Exception installError)
             {
-                // Clean up any installed directories if there's a partial install
-                for (int i = 0; i < destinationDirectories.Count; i++)
+                var notRestored = RollBack(writtenDirectories, backups, backupSet);
+                if (notRestored.Count > 0)
                 {
-                    var destDir = destinationDirectories[i];
-                    if (Directory.Exists(destDir))
-                        Directory.Delete(destDir, true);
-                }
-
-                if (backupCreated)
-                {
-                    // Restore all backed up directories
-                    foreach (var backupDir in backupDirectories)
-                    {
-                        if (Directory.Exists(backupDir))
-                        {
-                            var restoreDest = backupDir.Substring(0, backupDir.LastIndexOf(Path.DirectorySeparatorChar));
-                            Directory.CreateDirectory(Path.GetDirectoryName(restoreDest)!);
-                            Directory.Move(backupDir, restoreDest);
-                        }
-                    }
+                    throw new IOException(
+                        $"{installError.Message} The old copy of {string.Join(", ", notRestored.Select(Path.GetFileName))} " +
+                        $"could not be put back and is still in {backupSet}.",
+                        installError);
                 }
 
                 throw;
@@ -236,6 +221,50 @@ public sealed class AddonInstallerService
         }
     }
 
+    /// <summary>
+    /// Undoes a failed install: deletes only the folders it wrote (a folder that couldn't be moved to its
+    /// backup is still the player's) and moves each backup back. Never throws, so the install's own error
+    /// is the one reported. Returns the backups that are still in the backup set.
+    /// </summary>
+    private static List<string> RollBack(
+        List<string> writtenDirectories,
+        List<(string Backup, string Destination)> backups,
+        string backupSet)
+    {
+        foreach (var written in writtenDirectories)
+        {
+            try
+            {
+                if (Directory.Exists(written))
+                    Directory.Delete(written, true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // What's left in the way makes that folder's restore below fail, which is reported.
+            }
+        }
+
+        var notRestored = new List<string>();
+        foreach (var (backup, destination) in backups)
+        {
+            try { Directory.Move(backup, destination); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { notRestored.Add(backup); }
+        }
+
+        // An empty set would take one of the places PruneBackups keeps.
+        if (notRestored.Count == 0)
+        {
+            try
+            {
+                if (Directory.Exists(backupSet))
+                    Directory.Delete(backupSet);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+
+        return notRestored;
+    }
+
     public void Remove(string clientDirectory, AddonDefinition addon)
     {
         ManagedPath.Relative(addon.Id, true);
@@ -247,13 +276,14 @@ public sealed class AddonInstallerService
         // If we have InstalledFolders saved (new style), remove all of them
         if (state.InstalledFolders != null && state.InstalledFolders.Count > 0)
         {
+            var backupSet = Guid.NewGuid().ToString("N");
             foreach (var folderName in state.InstalledFolders)
             {
                 var destination = ManagedPath.Resolve(clientDirectory, Path.Combine("Interface", "AddOns", folderName));
                 ManagedRuntimeWriteGuard.Check(clientDirectory, destination);
                 if (!Directory.Exists(destination)) continue;
                 
-                var backup = ManagedPath.Resolve(clientDirectory, Path.Combine(".portalkeeper", "backups", addon.Id, Guid.NewGuid().ToString("N"), folderName));
+                var backup = ManagedPath.Resolve(clientDirectory, Path.Combine(".portalkeeper", "backups", addon.Id, backupSet, folderName));
                 Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
                 Directory.Move(destination, backup);
             }
@@ -519,14 +549,14 @@ public sealed class AddonInstallerService
         return string.Empty;
     }
 
-    private static string CreateBackupPath(
+    // One install or update is one set, however many folders the addon has: PruneBackups keeps sets.
+    private static string NewBackupSet(
         string clientDirectory,
-        AddonDefinition addon,
-        string directoryName)
+        AddonDefinition addon)
     {
         var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmssfff");
 
-        return ManagedPath.Resolve(clientDirectory, Path.Combine(".portalkeeper", "backups", addon.Id, timestamp + "-" + Guid.NewGuid().ToString("N"), directoryName));
+        return ManagedPath.Resolve(clientDirectory, Path.Combine(".portalkeeper", "backups", addon.Id, timestamp + "-" + Guid.NewGuid().ToString("N")));
     }
 
     private static void CopyDirectory(

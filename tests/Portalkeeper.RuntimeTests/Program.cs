@@ -46,6 +46,8 @@ internal static partial class Program
             return RunMoonPhasesExe(args);
         if (args.Length > 0 && args[0] == "patch-cache")
             return RunPatchCache().GetAwaiter().GetResult();
+        if (args.Length > 0 && args[0] == "addon-rollback")
+            return RunAddonRollback().GetAwaiter().GetResult();
         return RunBattery();
     }
 
