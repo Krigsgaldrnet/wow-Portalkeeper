@@ -210,6 +210,7 @@ internal static partial class Program
 
             // The client is held to exactly what the realm ships; addons and settings are the player's.
             ClientConformanceChecks(root, Check);
+            ClientTorrentChangeChecks(root, Check);
             await ClientBaseDownloadChecks(root, Check);
 
             // INSTALL WOW brings the player's own addons and settings from the old client.
@@ -642,6 +643,53 @@ internal static partial class Program
                 && Interlocked.Read(ref served) - servedBefore is > 0 and <= 2 * 16 * 1024);
             check($"the check reports its progress ({checking.Count} reports, last {checking.LastOrDefault():F0}%)",
                 checking.Count > 1 && checking.Last() >= 99);
+
+            // The realm rebuilds a file and it keeps its size. The sizes say nothing is wrong; the new
+            // torrent's info hash does, and the update fetches only the piece that changed.
+            var shippedMpq = Path.Combine(shipped, "Data", "common.MPQ");
+            void Marker(byte[] t) => Put(Path.Combine(client, ClientConformanceService.InstallMarkerRelativePath),
+                System.Text.Encoding.UTF8.GetBytes("{\"infoHash\":\"" + TorrentService.InfoHashOf(t) + "\",\"started\":\"2026-11-04T00:00:00+00:00\"}"));
+            byte[] Rebuild(int position)
+            {
+                var rebuilt = File.ReadAllBytes(shippedMpq);
+                rebuilt[position] ^= 0xFF;
+                File.WriteAllBytes(shippedMpq, rebuilt);
+                return FixtureTorrent(shipped, 16 * 1024, $"http://127.0.0.1:{port}/");
+            }
+            Marker(torrent);
+            ClientConformanceService.SaveCachedTorrent(client, torrent);
+            var rebuiltTorrent = Rebuild(50_000);
+            var sameSizes = ClientConformanceService.Check(client, rebuiltTorrent, []);
+            var changed = ClientConformanceService.ClientTorrentChanged(client, rebuiltTorrent);
+            check("a same-size rebuild passes the size check but counts as changed",
+                sameSizes.HasAllClientFiles && changed
+                && ClientConformanceService.Decide(sameSizes, ClientConformanceService.IsRealmInstall(client), changed) == ClientAction.Update);
+
+            servedBefore = Interlocked.Read(ref served);
+            checking.Clear();
+            await torrents.DownloadAsync(rebuiltTorrent, client, keepSharing: true,
+                new SyncProgress<TorrentProgress>(p => { if (p.Checking) lock (checking) checking.Add(p.Percent); }), timeout.Token);
+            check("the update hash-checks the client without being told to",
+                checking.Count > 1);
+            check("the update brings the rebuilt file",
+                File.ReadAllBytes(mpq).AsSpan().SequenceEqual(File.ReadAllBytes(shippedMpq)));
+            check($"the update downloads only the changed piece ({Interlocked.Read(ref served) - servedBefore:N0} bytes)",
+                Interlocked.Read(ref served) - servedBefore is > 0 and <= 2 * 16 * 1024);
+            Marker(rebuiltTorrent);
+            ClientConformanceService.SaveCachedTorrent(client, rebuiltTorrent);
+            check("with the marker and record a finished download leaves, the client is current",
+                !ClientConformanceService.ClientTorrentChanged(client, rebuiltTorrent));
+            check("sharing works again after the update", await torrents.ShareAsync(rebuiltTorrent, client));
+
+            // A launcher that already failed to share the new torrent left resume data saying which
+            // pieces are wrong: the update has to fetch those, not trust the copy.
+            var rebuiltAgain = Rebuild(150_000);
+            check("the old copy isn't shared under the new torrent", !await torrents.ShareAsync(rebuiltAgain, client));
+            servedBefore = Interlocked.Read(ref served);
+            await torrents.DownloadAsync(rebuiltAgain, client, keepSharing: false, null, timeout.Token);
+            check($"an update after a failed share still fetches the piece ({Interlocked.Read(ref served) - servedBefore:N0} bytes)",
+                File.ReadAllBytes(mpq).AsSpan().SequenceEqual(File.ReadAllBytes(shippedMpq))
+                && Interlocked.Read(ref served) - servedBefore is > 0 and <= 2 * 16 * 1024);
         }
         catch (Exception ex) { check("installing over another client: " + ex.Message, false); }
         finally
@@ -735,6 +783,113 @@ internal static partial class Program
 
         ClientConformanceService.SaveCachedTorrent(client, torrent);
         check("the client torrent is kept for offline checks", ClientConformanceService.LoadCachedTorrent(client) is { } cached && cached.SequenceEqual(torrent));
+    }
+
+    /// <summary>When a new client torrent means an update, whatever the file sizes say.</summary>
+    private static void ClientTorrentChangeChecks(string root, Action<string, bool> check)
+    {
+        static byte[] Bytes(int seed, int length) { var b = new byte[length]; new Random(seed).NextBytes(b); return b; }
+        void Put(string path, byte[] bytes) { Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllBytes(path, bytes); }
+        var shipped = Path.Combine(root, "change-src", "Evermore");
+        var dll = Bytes(32, 40_000);
+        Put(Path.Combine(shipped, "Wow.exe"), Bytes(31, 40_000));
+        Put(Path.Combine(shipped, "LuxVelum.dll"), dll);
+        var oldTorrent = FixtureTorrent(shipped, 16_384, "https://seed.example/passkey-a/");
+        var otherPlayer = FixtureTorrent(shipped, 16_384, "https://seed.example/passkey-b/");
+        dll[20_000] ^= 0xFF;
+        Put(Path.Combine(shipped, "LuxVelum.dll"), dll);
+        var newTorrent = FixtureTorrent(shipped, 16_384, "https://seed.example/passkey-a/");
+        var oldHash = TorrentService.InfoHashOf(oldTorrent);
+        var newHash = TorrentService.InfoHashOf(newTorrent);
+        check("a same-size rebuild has a new info hash", oldHash != newHash);
+        check("another player's passkey doesn't change the info hash", oldHash == TorrentService.InfoHashOf(otherPlayer));
+
+        var client = Path.Combine(root, "change", "WoW");
+        Directory.CreateDirectory(client);
+        var cachedPath = Path.Combine(client, ClientConformanceService.CachedTorrentRelativePath);
+        var markerPath = Path.Combine(client, ClientConformanceService.InstallMarkerRelativePath);
+        string MarkerFor(string hash) => "{\"infoHash\":\"" + hash + "\",\"started\":\"2026-11-04T00:00:00+00:00\"}";
+        void State(byte[]? cached, string? marker)
+        {
+            if (cached is null) { if (File.Exists(cachedPath)) File.Delete(cachedPath); } else Put(cachedPath, cached);
+            if (marker is null) { if (File.Exists(markerPath)) File.Delete(markerPath); } else Put(markerPath, System.Text.Encoding.UTF8.GetBytes(marker));
+        }
+        bool Changed() => ClientConformanceService.ClientTorrentChanged(client, newTorrent);
+
+        State(newTorrent, MarkerFor(newHash));
+        check("the torrent it was brought up to: no update", !Changed());
+        State(oldTorrent, MarkerFor(oldHash));
+        check("a new torrent over the last one: update", Changed());
+        State(oldTorrent, null);
+        check("a client the launcher didn't install: the record still shows the new torrent", Changed());
+        State(oldTorrent, MarkerFor(newHash));
+        check("marker new, record old (an update that didn't finish): update", Changed());
+        State(newTorrent, MarkerFor(oldHash));
+        check("an old launcher saved the new torrent without downloading it: update", Changed());
+        State(otherPlayer, MarkerFor(oldHash));
+        check("the same torrent with another passkey is not a change",
+            !ClientConformanceService.ClientTorrentChanged(client, oldTorrent));
+
+        // No record of what's there: no needless hash check of the whole client.
+        State(null, null);
+        check("no record at all: the current torrent is the baseline", !Changed());
+        State(null, MarkerFor(newHash));
+        check("no cached torrent, the marker names this one: the baseline", !Changed());
+        State(null, MarkerFor(oldHash));
+        check("no cached torrent, the marker names another: update", Changed());
+        State(null, MarkerFor(newHash));
+        check("no cached torrent, the marker names this one, its download never finished: update",
+            ClientConformanceService.ClientTorrentChanged(client, newTorrent, downloadUnfinished: true));
+        State(newTorrent, MarkerFor(newHash));
+        check("a REPAIR GAME paused over the current torrent doesn't hold the client back",
+            !ClientConformanceService.ClientTorrentChanged(client, newTorrent, downloadUnfinished: true));
+        State(null, "{\"started\":\"2026-11-04T00:00:00+00:00\"}");
+        check("a marker without a hash says nothing", !Changed());
+        foreach (var damaged in new[] { "not json", "[1,2]", "{\"infoHash\":5}", "" })
+        {
+            State(null, damaged);
+            check($"an unreadable marker says nothing ({damaged.Length} bytes)", !Changed());
+        }
+
+        // A damaged record reads as no record.
+        foreach (var damaged in new[] { Array.Empty<byte>(), "<html>error</html>"u8.ToArray(), "d4:name3:abce"u8.ToArray(), oldTorrent[..100] })
+        {
+            State(damaged, null);
+            check($"a damaged cached torrent ({damaged.Length} bytes) reads as none, for the offline check too",
+                ClientConformanceService.LoadCachedTorrent(client) is null && !Changed());
+            check($"bytes that aren't a torrent ({damaged.Length} bytes) have no info hash", TorrentService.TryInfoHashOf(damaged) is null);
+        }
+
+        // A record that can't be written is reported, so the launcher can say the update did finish.
+        State(oldTorrent, null);
+        var blocked = Path.Combine(root, "change", "blocked");
+        Directory.CreateDirectory(blocked);
+        File.WriteAllText(Path.Combine(blocked, ".portalkeeper"), "a file where the folder should be");
+        check("a record that can't be written says so", !ClientConformanceService.SaveCachedTorrent(blocked, newTorrent));
+        check("a record that can be written says so", ClientConformanceService.SaveCachedTorrent(client, newTorrent)
+            && ClientConformanceService.LoadCachedTorrent(client) is { } saved && saved.SequenceEqual(newTorrent));
+
+        // An answer with a 200 that isn't a torrent is no answer: it must never reach the launcher's torrent.
+        byte[] portalAnswer = "<html>Warning: something went wrong</html>"u8.ToArray();
+        var portal = new LauncherAccountService(new Uri("https://portal.example/api/launcher/"),
+            new HttpClient(new FakeHandler(_ => new ByteArrayContent(portalAnswer))));
+        var player = new LauncherSession("token", "ALICE", DateTimeOffset.UtcNow.AddDays(30));
+        var refused = false;
+        try { portal.GetClientTorrentAsync(player).GetAwaiter().GetResult(); }
+        catch (InvalidDataException) { refused = true; }
+        check("the portal's error page isn't taken for a torrent", refused);
+        portalAnswer = newTorrent;
+        check("the portal's torrent is handed on as it came",
+            portal.GetClientTorrentAsync(player).GetAwaiter().GetResult().SequenceEqual(newTorrent));
+
+        var allThere = new ClientConformance([], [], [], 2);
+        var missing = new ClientConformance(["Wow.exe"], [], [], 2);
+        check("files and torrent current: fine, whoever installed it",
+            ClientConformanceService.Decide(allThere, true, false) == ClientAction.Ok && ClientConformanceService.Decide(allThere, false, false) == ClientAction.Ok);
+        check("the launcher's own install updates itself, for a new torrent or for files",
+            ClientConformanceService.Decide(allThere, true, true) == ClientAction.Update && ClientConformanceService.Decide(missing, true, false) == ClientAction.Update);
+        check("another client that's behind is sent to INSTALL WOW",
+            ClientConformanceService.Decide(allThere, false, true) == ClientAction.NotRealmClient && ClientConformanceService.Decide(missing, false, false) == ClientAction.NotRealmClient);
     }
 
     private static async Task RetiredPatchChecks(string root, Action<string, bool> check)

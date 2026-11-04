@@ -218,6 +218,7 @@ public sealed partial class MainViewModel
     {
         var session = _session;
         if (!CanInstallClient || session is null) return;
+        _clientTorrent = null; // a launcher left open may hold an old one: ask the portal again
         await DownloadClientAsync(session, folder, repair: false);
     }
 
@@ -237,8 +238,9 @@ public sealed partial class MainViewModel
         SetInstallStatus(repair ? "Checking World of Warcraft..." : "Getting the client download...", 0);
         try
         {
-            _clientTorrent ??= await _accountService.GetClientTorrentAsync(session, cancel);
-            var infoHash = TorrentService.InfoHashOf(_clientTorrent);
+            // Held here: the marker, the download and the record all have to name the same torrent.
+            var torrent = _clientTorrent ??= await _accountService.GetClientTorrentAsync(session, cancel);
+            var infoHash = TorrentService.InfoHashOf(torrent);
             string target;
             if (repair)
                 target = ClientPath;
@@ -247,7 +249,7 @@ public sealed partial class MainViewModel
             else if (folder is not null)
                 target = ClientService.FindWowExecutable(folder) is not null || File.Exists(Path.Combine(folder, InstallMarker))
                     ? folder
-                    : Path.Combine(folder, TorrentService.NameOf(_clientTorrent));
+                    : Path.Combine(folder, TorrentService.NameOf(torrent));
             else
                 throw new InvalidOperationException("Choose where to install World of Warcraft.");
 
@@ -268,17 +270,22 @@ public sealed partial class MainViewModel
             {
                 SetInstallStatus("Removing files the realm doesn't ship...", 0);
                 await StopAllSharingAsync();
-                var torrent = _clientTorrent;
-                var realmFiles = RealmPatchFiles(target);
-                await Task.Run(() => ClientConformanceService.DeleteNonConforming(target,
-                    ClientConformanceService.Check(target, torrent, realmFiles)), cancel);
+                // Without a realm (a refresh is under way) its patches can't be told from extras: those
+                // wait for the next check. Too-long files can't: the download can't shorten them.
+                var realm = _realmInfo;
+                var realmFiles = realm is null ? [] : RealmPatchFiles(target, realm);
+                await Task.Run(() =>
+                {
+                    var conformance = ClientConformanceService.Check(target, torrent, realmFiles);
+                    ClientConformanceService.DeleteNonConforming(target, realm is null ? conformance with { Extra = [] } : conformance);
+                }, cancel);
                 SetInstallStatus("Checking your files against the realm's client (this takes a few minutes)...", 0);
             }
 
             var verb = repair ? "Updating World of Warcraft" : "Downloading World of Warcraft";
             var progress = new Progress<TorrentProgress>(p => SetInstallStatus(DescribeDownload(verb, p), p.Percent));
-            await _torrents.DownloadAsync(_clientTorrent, target, keepSharing: true, progress, cancel);
-            ClientConformanceService.SaveCachedTorrent(target, _clientTorrent);
+            await _torrents.DownloadAsync(torrent, target, keepSharing: true, progress, cancel);
+            _updatedWithoutRecord = ClientConformanceService.SaveCachedTorrent(target, torrent) ? null : (target, infoHash);
 
             _savedSettings.PendingClientInstallPath = null;
             var installed = repair ? "World of Warcraft is up to date." : "World of Warcraft is installed.";
@@ -635,46 +642,81 @@ public sealed partial class MainViewModel
     private readonly SemaphoreSlim _clientCheckLock = new(1, 1);
     private DateTimeOffset _lastAutoUpdate = DateTimeOffset.MinValue;
     private static readonly TimeSpan AutoUpdateInterval = TimeSpan.FromMinutes(10);
+    // A slow portal holds up ENTER REALM at most this long; then the torrent the launcher knows is used.
+    private static readonly TimeSpan ClientTorrentWait = TimeSpan.FromSeconds(15);
+    // Health loop ticks (45 s each) between two asks for the client torrent: about 15 minutes.
+    private const int ClientTorrentEveryTicks = 20;
+    private int _clientTorrentTicks;
+    private bool _isCheckingClientTorrent;
+    private (string Root, string InfoHash)? _updatedWithoutRecord;
 
     /// <summary>
     /// Holds the client to exactly what the realm ships (ClientConformanceService): files the realm
     /// doesn't ship are deleted, and when client files are missing or changed, a client the launcher
     /// installed (or made from another client) is updated in place by itself. Any other client goes
-    /// through INSTALL WOW first, which uses it as the base. Only for the built-in realm. When the portal
-    /// can't be reached the last client torrent seen is used; without any, the client isn't held back.
-    /// Returns true when the client may be played.
+    /// through INSTALL WOW first, which uses it as the base. A new client torrent counts as changed files
+    /// even when every size is the same (ClientConformanceService.ClientTorrentChanged), so the portal is
+    /// asked every time: a launcher left open mustn't keep checking against the torrent it got at login.
+    /// Only for the built-in realm. When the portal can't be reached the last client torrent seen is used
+    /// and no update starts because of a new torrent; without any, the client isn't held back.
+    /// Returns true when the client may be played. <paramref name="forLaunch"/> is ENTER REALM's own check;
+    /// any other check gives way to a launch, so nothing starts writing under a game about to open.
     /// </summary>
-    private async Task<bool> EnforceRealmClientAsync()
+    private async Task<bool> EnforceRealmClientAsync(bool forLaunch = false)
     {
         var session = _session;
         var realm = _realmInfo;
         if (session is null || realm is null || !ClientValid || !RealmBranding.IsBuiltIn(realm) || IsIsolatedRealm)
             return SetClientCheck(ClientCheck.Ok);
-        if (_isInstallingClient || IsGameRunning) return _clientCheck == ClientCheck.Ok;
+        if (_isInstallingClient || IsGameRunning || (IsLaunching && !forLaunch)) return _clientCheck == ClientCheck.Ok;
         await _clientCheckLock.WaitAsync();
         try
         {
             var root = ClientPath;
-            byte[]? torrent;
-            try { torrent = _clientTorrent ??= await _accountService.GetClientTorrentAsync(session); }
-            catch (LauncherApiException ex) when (ex.Status == HttpStatusCode.NotFound) { torrent = null; }
-            catch (Exception) { torrent = ClientConformanceService.LoadCachedTorrent(root); }
-            if (torrent is null) return SetClientCheck(ClientCheck.Ok);
+            // Asking the portal and walking the folder take a while. Meanwhile a download or the game may
+            // start, the player may move on, or a refresh may take the realm away: its patches would then
+            // look like files the realm doesn't ship. Whatever changed runs its own check afterwards.
+            bool Overtaken() => _isInstallingClient || IsGameRunning || (IsLaunching && !forLaunch) || _isRefreshingConfiguration
+                || root != ClientPath || !ReferenceEquals(_session, session) || !ReferenceEquals(_realmInfo, realm);
 
-            var realmFiles = RealmPatchFiles(root);
+            byte[]? torrent;
+            var answered = false;
+            try
+            {
+                torrent = await AskClientTorrentAsync(session);
+                answered = true;
+            }
+            catch (LauncherApiException ex) when (ex.Status == HttpStatusCode.NotFound)
+            {
+                torrent = null;
+                _clientTorrent = null;
+            }
+            catch (Exception) { torrent = _clientTorrent ?? ClientConformanceService.LoadCachedTorrent(root); }
+            if (Overtaken()) return _clientCheck == ClientCheck.Ok;
+            if (torrent is null) return SetClientCheck(ClientCheck.Ok);
+            // Only the portal's answer: the cached copy is the record, and may carry another account's passkey.
+            if (answered) _clientTorrent = torrent;
+
+            var realmFiles = RealmPatchFiles(root, realm);
             var result = await Task.Run(() => ClientConformanceService.Check(root, torrent, realmFiles));
+            if (Overtaken()) return _clientCheck == ClientCheck.Ok;
             var ours = ClientConformanceService.IsRealmInstall(root);
-            if (!result.HasAllClientFiles && !ours)
+            var changed = answered && !IsUpdatedThisRun(root, torrent) && ClientConformanceService.ClientTorrentChanged(root, torrent,
+                !string.IsNullOrEmpty(_savedSettings.PendingClientInstallPath) && SameDirectory(_savedSettings.PendingClientInstallPath, root));
+            var action = ClientConformanceService.Decide(result, ours, changed);
+            if (action == ClientAction.NotRealmClient)
                 return SetClientCheck(ClientCheck.NotRealmClient);
             if (result.Extra.Count > 0)
             {
                 var deleted = await Task.Run(() => ClientConformanceService.DeleteNonConforming(root,
                     result with { TooLong = [] }));
                 if (deleted > 0) RefreshPatches();
+                if (Overtaken()) return _clientCheck == ClientCheck.Ok;
             }
-            if (result.HasAllClientFiles)
+            if (action == ClientAction.Ok)
             {
-                ClientConformanceService.SaveCachedTorrent(root, torrent);
+                // Without an answer this may be a newer torrent than the client has: not a record to keep.
+                if (answered) ClientConformanceService.SaveCachedTorrent(root, torrent);
                 return SetClientCheck(ClientCheck.Ok);
             }
 
@@ -684,14 +726,56 @@ public sealed partial class MainViewModel
                 _ = DownloadClientAsync(session, null, repair: true);
                 return SetClientCheck(ClientCheck.NeedsUpdate, "Updating World of Warcraft...");
             }
-            return SetClientCheck(ClientCheck.NeedsUpdate,
-                $"{result.Different.Count} World of Warcraft file(s) don't match the realm's client; CHECK AGAIN retries the update.");
+            return SetClientCheck(ClientCheck.NeedsUpdate, result.HasAllClientFiles
+                ? "The realm's client has changed; CHECK AGAIN retries the update."
+                : $"{result.Different.Count} World of Warcraft file(s) don't match the realm's client; CHECK AGAIN retries the update.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             return SetClientCheck(ClientCheck.NeedsUpdate, UserErrorService.Format(ex, "Couldn't check World of Warcraft's files"));
         }
         finally { _clientCheckLock.Release(); }
+    }
+
+    /// <summary>The client torrent the portal has now. Throws when it doesn't answer in time.</summary>
+    private async Task<byte[]> AskClientTorrentAsync(LauncherSession session)
+    {
+        using var timeout = new CancellationTokenSource(ClientTorrentWait);
+        return await _accountService.GetClientTorrentAsync(session, timeout.Token);
+    }
+
+    /// <summary>
+    /// An update finished here but its record couldn't be written (a read-only file). The client is
+    /// current: without this the record would say otherwise and hold it back for as long as that lasts.
+    /// The check after it tries to save the record again, and a restart hash-checks once more.
+    /// </summary>
+    private bool IsUpdatedThisRun(string root, byte[] torrent) =>
+        _updatedWithoutRecord is { } updated && SameDirectory(updated.Root, root) && updated.InfoHash == TorrentService.InfoHashOf(torrent);
+
+    /// <summary>
+    /// A launcher left open finds a new client torrent by itself, so the update is done before the player
+    /// comes back instead of holding up ENTER REALM. Only while nothing else runs and the client was fine;
+    /// a stopped or paused update waits for its TRY AGAIN or a restart as before.
+    /// </summary>
+    private async Task CheckClientTorrentOnTickAsync()
+    {
+        if (++_clientTorrentTicks % ClientTorrentEveryTicks != 0 || _isCheckingClientTorrent) return;
+        var session = _session;
+        var known = _clientTorrent;
+        if (session is null || _clientCheck != ClientCheck.Ok || _syncRuns > 0 || !IsIdleForUpdate
+            || !RealmBranding.IsBuiltIn(_realmInfo) || IsIsolatedRealm)
+            return;
+        _isCheckingClientTorrent = true;
+        try
+        {
+            var current = await AskClientTorrentAsync(session);
+            // With none known the portal couldn't be asked at the last check: check again now that it answers.
+            if (known is not null && TorrentService.InfoHashOf(current) == TorrentService.InfoHashOf(known)) return;
+            if (_syncRuns > 0 || !IsIdleForUpdate) return; // asked again on a later tick
+            await EnforceRealmClientAsync();
+        }
+        catch (Exception) { } // asked again on a later tick
+        finally { _isCheckingClientTorrent = false; }
     }
 
     /// <summary>TRY AGAIN: an update that didn't fix the client may run again straight away.</summary>
@@ -707,10 +791,9 @@ public sealed partial class MainViewModel
     }
 
     /// <summary>Where the realm's patches go in <paramref name="root"/>: they belong in the client too, installed or not.</summary>
-    private List<string> RealmPatchFiles(string root)
+    private List<string> RealmPatchFiles(string root, RealmInfo realm)
     {
         var files = new List<string>();
-        if (_realmInfo is not { } realm) return files;
         files.AddRange(realm.Patches.Where(p => p.InstallMode == PatchInstallMode.File)
             .Select(p => Path.Combine(root, p.InstallDirectory, p.FileName)));
         if (SameDirectory(root, EffectiveClientPath))
