@@ -47,6 +47,8 @@ public sealed partial class MainViewModel
 
     public HomeCard Card =>
         _isInstallingClient ? HomeCard.Installing
+        // Before the rest: its text says why INSTALL WOW and the updates are waiting.
+        : _outsideGameRunning ? HomeCard.Playing
         : !ClientValid || _clientCheck == ClientCheck.NotRealmClient ? HomeCard.NoClient
         : IsGameRunning || IsLaunching ? HomeCard.Playing
         : _isInstallingRequired || IsCheckingAddons ? HomeCard.Syncing

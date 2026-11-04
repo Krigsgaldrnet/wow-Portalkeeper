@@ -447,6 +447,9 @@ internal static partial class Program
 
             // Crash reports and the home screen's live info and patch notes.
             await HomeAndCrashChecks(root, Check);
+
+            // A game the launcher didn't start.
+            await RunningGameChecks(root, Check);
         }
         catch (Exception ex)
         {

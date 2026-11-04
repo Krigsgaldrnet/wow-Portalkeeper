@@ -32,11 +32,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private bool _isManagingComponents;
     private async Task RunComponentOperationAsync(Func<Task> operation)
     {
+        await LookForOutsideGameAsync();
         if (_isManagingComponents || _isRefreshingConfiguration || IsLaunching || IsGameRunning)
             throw new InvalidOperationException("Wait for the current operation and close World of Warcraft before modifying components.");
         _isManagingComponents = true;
         OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
         try { await StopOptionalAddonUpdatesAsync(); await PrepareIsolatedRuntimeAsync(); await operation(); }
+        catch (OperationCanceledException) when (IsGameRunning)
+        {
+            throw new InvalidOperationException("Stopped because World of Warcraft is running. Close it, then try again.");
+        }
         finally
         {
             _isManagingComponents = false; OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm)); UpdateLaunchReadinessStatus();
@@ -99,7 +104,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             var root = EffectiveClientPath;
             var realm = _realmInfo;
             if (remove) await Task.Run(() => _patchService.Remove(root, patch, realm, backupUnlessCurrent: turnedOff));
-            else await _patchService.InstallAsync(EffectiveClientPath, patch, _realmInfo);
+            else await _patchService.InstallAsync(EffectiveClientPath, patch, _realmInfo, _outsideGameStop.Token);
         }
         finally { RefreshPatches(); _ = RefreshSharingAsync(); }
     }
@@ -244,7 +249,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
         await _addonInstallerService.InstallOrUpdateAsync(
             EffectiveClientPath,
-            addon.Definition);
+            addon.Definition,
+            _outsideGameStop.Token);
 
         await LoadAddonsAsync();
     }
@@ -257,11 +263,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             .Where(addon => addon.CanInstallOrUpdate)
             .ToArray();
 
+        var stop = _outsideGameStop.Token;
         foreach (var addon in pending)
         {
             await _addonInstallerService.InstallOrUpdateAsync(
                 EffectiveClientPath,
-                addon.Definition);
+                addon.Definition,
+                stop);
         }
 
         await LoadAddonsAsync();
@@ -322,9 +330,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
         if (addon is not null && !addon.IsInstalled)
         {
+            await LookForOutsideGameAsync();
+            if (IsGameRunning || IsLaunching)
+                throw new InvalidOperationException("The addon was added. Close World of Warcraft, then install it from the ADDONS page.");
+
             await _addonInstallerService.InstallOrUpdateAsync(
                 EffectiveClientPath,
-                addon.Definition);
+                addon.Definition,
+                _outsideGameStop.Token);
 
             await LoadAddonsAsync();
         }
@@ -555,21 +568,27 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>The launcher's own game, or one started outside it from this client (MainViewModel.RunningGame.cs).</summary>
     public bool IsGameRunning
     {
-        get => _isGameRunning;
+        get => _isGameRunning || _outsideGameRunning;
         private set
         {
             if (_isGameRunning == value)
                 return;
 
             _isGameRunning = value;
-            OnPropertyChanged();
-            _characters?.SetGameRunning(value || _isLaunching);
-            NotifyInstallChanged();
-            OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
-            OnPropertyChanged(nameof(EnterRealmButtonText));
+            NotifyGameRunningChanged();
         }
+    }
+
+    private void NotifyGameRunningChanged()
+    {
+        OnPropertyChanged(nameof(IsGameRunning));
+        _characters?.SetGameRunning(IsGameRunning || _isLaunching);
+        NotifyInstallChanged();
+        OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
+        OnPropertyChanged(nameof(EnterRealmButtonText));
     }
 
     public string EnterRealmButtonText =>
@@ -604,6 +623,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
     public async Task EnterRealmAsync(Action? onLaunched = null)
     {
+        await LookForOutsideGameAsync();
         if (!CanEnterRealm || _realmInfo is null)
             return;
 
@@ -626,6 +646,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                     throw new InvalidOperationException(LiveRestartText + ". ENTER REALM opens again once it's back up.");
                 LaunchStatus = "Preparing client...";
             }
+            await ThrowIfOutsideGameAsync();
             await StopOptionalAddonUpdatesAsync();
             ApplyClientInfo(_clientService.ValidateClient(ClientPath, _realmInfo.Client));
             if (!await EnforceRealmClientAsync(forLaunch: true))
@@ -639,6 +660,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             var effectiveClient = _clientService.ValidateClient(EffectiveClientPath, _realmInfo.Client);
             if (!effectiveClient.IsSupportedClient) throw new InvalidOperationException(effectiveClient.StatusMessage);
             RefreshPatches();
+            await ThrowIfOutsideGameAsync();
             await RemoveTurnedOffPatchesAsync();
             if (!ClientValid || !PatchesReady) throw new InvalidOperationException(!ClientValid ? ClientStatus : "Required patches need attention.");
             var currentAddons = _addonService.InspectAddons(EffectiveClientPath, _addonManifest ??
@@ -649,6 +671,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             // An order the character select screen left last time, read before the login handoff writes
             // accountList; a slow portal doesn't hold the launch, and it never throws.
             await SendPendingCharacterOrderAsync(afterGame: false, PendingOrderLaunchWait);
+            await ThrowIfOutsideGameAsync();
             DismissCrash();
             SetRepairStatus("");
             launchedAt = DateTimeOffset.UtcNow;
@@ -681,7 +704,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 try { RealmLaunchService.ForgetGamePassword(EffectiveClientPath); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             }
-            var played = IsGameRunning;
+            var played = _isGameRunning;
             IsLaunching = false;
             IsGameRunning = false;
             if (played)
@@ -800,7 +823,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
     public void SetClientDirectory(string directoryPath)
     {
-        if (_isManagingComponents || IsLaunching || IsGameRunning) return;
+        // Choosing a folder writes nothing to it, so a game started outside the launcher doesn't stop this.
+        if (_isManagingComponents || IsLaunching || _isGameRunning) return;
         _optionalUpdateCancel?.Cancel(); // the rest of its updates were meant for the old client
         _clientCheck = ClientCheck.Unchecked;
         var client =
@@ -869,7 +893,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
     public async Task RediscoverRealmConfigurationAsync(string? selectedPath = null)
     {
-        if (_isManagingComponents || _isRefreshingConfiguration || IsGameRunning || IsLaunching) return;
+        // A launcher opened under a game started outside it still has to read its realm. Nothing here
+        // writes to the client, and the sync at the end holds back for that game.
+        if (_isManagingComponents || _isRefreshingConfiguration || _isGameRunning || IsLaunching) return;
         _isRefreshingConfiguration = true;
         OnPropertyChanged(nameof(CanEnterRealm)); OnPropertyChanged(nameof(CanSwitchRealm));
         try

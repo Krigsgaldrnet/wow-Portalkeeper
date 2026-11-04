@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 using Portalkeeper.Models;
 namespace Portalkeeper.Services;
@@ -51,7 +52,7 @@ public sealed class PatchService
         using var stream = File.OpenRead(path);
         return Convert.ToHexString(SHA256.HashData(stream)).Equals(hash, StringComparison.OrdinalIgnoreCase);
     }
-    public async Task InstallAsync(string root, PatchDefinition patch, RealmInfo? realm = null)
+    public async Task InstallAsync(string root, PatchDefinition patch, RealmInfo? realm = null, CancellationToken cancellationToken = default)
     {
         if (patch.SourceType != "HTTP") throw new InvalidDataException("Unsupported patch source.");
         ManagedPath.Url(patch.SourceUrl);
@@ -71,10 +72,10 @@ public sealed class PatchService
             if (Downloader is null || !await Downloader(patch, temp))
             {
                 if (File.Exists(temp)) File.Delete(temp);
-                using var response = await _http.GetAsync(patch.SourceUrl, HttpCompletionOption.ResponseHeadersRead);
+                using var response = await _http.GetAsync(patch.SourceUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 response.EnsureSuccessStatusCode();
                 await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                { await response.Content.CopyToAsync(output); }
+                { await response.Content.CopyToAsync(output, cancellationToken); }
             }
             if (!Matches(temp, patch.Sha256)) throw new InvalidDataException("Downloaded patch failed SHA-256 validation. Existing patch preserved.");
             if (allocations is null) destination = FileDestination(root, patch);
@@ -87,6 +88,8 @@ public sealed class PatchService
                     throw new InvalidDataException("WoW patch destination changed during download. Retry installation.");
             }
             ManagedRuntimeWriteGuard.Check(root, destination);
+            // The last moment before the client's own file changes: hashing the download takes seconds.
+            cancellationToken.ThrowIfCancellationRequested();
             var replaced = Backup(root, destination);
             // A newly chosen slot is never replaced, even if a foreign file appeared
             // after scanning. Existing allocations retain the shared replacement path.
