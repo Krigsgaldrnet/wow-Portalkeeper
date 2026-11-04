@@ -646,6 +646,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             var unsatisfied = currentAddons.Where(a => a.Definition.Required && (!a.IsInstalled || a.IsUpdateAvailable)).ToArray();
             if (unsatisfied.Length > 0) throw new InvalidOperationException("Required addons need attention: " + string.Join(", ", unsatisfied.Select(a => a.Definition.Name)));
             PrepareCombatLogsForLaunch();
+            PrepareLuaErrorsForLaunch();
             // An order the character select screen left last time, read before the login handoff writes
             // accountList; a slow portal doesn't hold the launch, and it never throws.
             await SendPendingCharacterOrderAsync(afterGame: false, PendingOrderLaunchWait);
@@ -688,6 +689,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             {
                 _ = ResumeSharingAfterGameAsync();
                 _ = UploadCombatLogsAsync(afterGame: true);
+                _ = SendLuaErrorsAsync(afterGame: true);
                 _ = CheckForCrashAsync(launchedAt);
                 _ = RefreshHomeInfoAsync(whatsNew: true);
                 _ = SendPendingCharacterOrderAsync(afterGame: true);
@@ -1005,6 +1007,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ArmoryAvailable));
         OnPropertyChanged(nameof(CombatLogSharingOffered));
         OnPropertyChanged(nameof(CrashReportsOffered));
+        OnPropertyChanged(nameof(LuaErrorsOffered));
         OnPropertyChanged(nameof(ShopAvailable));
         OnPropertyChanged(nameof(LegacyAvailable));
         OnPropertyChanged(nameof(CharactersAvailable));

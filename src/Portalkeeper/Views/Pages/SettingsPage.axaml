@@ -323,6 +323,37 @@
                                            TextWrapping="Wrap" />
                             </Grid>
                         </views:DragonFrame>
+                        <!-- Only when the realm collects Lua errors (the portal says so) -->
+                        <views:DragonFrame Kind="SmallInset" Ground="None" Padding="12,10"
+                                IsVisible="{Binding LuaErrorsOffered}">
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+                                <CheckBox Grid.RowSpan="3"
+                                          IsChecked="{Binding SendLuaErrors, Mode=TwoWay}"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,12,0" />
+                                <TextBlock Grid.Column="1"
+                                           Text="Send Lua errors to the realm"
+                                           Foreground="#F2E7D0"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="1"
+                                           Grid.Column="1"
+                                           Text="A small addon records addon errors from the game, and they go to the realm when you close it, so they can be fixed without you copying anything. They include your character's name and the addons you have loaded. On by default."
+                                           Margin="0,4,0,0"
+                                           Foreground="#8E9AA5"
+                                           FontSize="11"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="2"
+                                           Grid.Column="1"
+                                           Text="{Binding LuaErrorsDetail}"
+                                           IsVisible="{Binding SendLuaErrors}"
+                                           Margin="0,6,0,0"
+                                           Foreground="#E8B64C"
+                                           FontSize="11"
+                                           TextWrapping="Wrap" />
+                            </Grid>
+                        </views:DragonFrame>
                         <!-- Only when the realm takes crash reports (the portal says so) -->
                         <views:DragonFrame Kind="SmallInset" Ground="None" Padding="12,10"
                                 IsVisible="{Binding CrashReportsOffered}">
