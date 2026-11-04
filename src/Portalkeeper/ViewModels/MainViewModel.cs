@@ -780,6 +780,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             await RefreshRealmHealthAsync();
             _ = RefreshHomeInfoOnTickAsync();
             _ = CheckRealmConfigurationOnTickAsync();
+            _ = CheckClientTorrentOnTickAsync();
             // A patch choice nothing has picked up yet (something else was busy when it was made).
             _ = ApplyPatchChoicesAsync();
             // A shop that couldn't be asked at login (the world server restarting) is asked again

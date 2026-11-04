@@ -207,6 +207,13 @@ public sealed class TorrentService
 
     public static string InfoHashOf(byte[] torrentBytes) => Key(Torrent.Load(torrentBytes).InfoHashes);
 
+    /// <summary>The info hash, or null when these bytes aren't a usable torrent (a damaged file, an error page).</summary>
+    public static string? TryInfoHashOf(byte[] torrentBytes)
+    {
+        try { return InfoHashOf(torrentBytes); }
+        catch (Exception) { return null; }
+    }
+
     /// <summary>The torrent's name: the client's folder name, or a patch's file name.</summary>
     public static string NameOf(byte[] torrentBytes)
     {

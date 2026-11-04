@@ -67,8 +67,8 @@ public sealed partial class MainViewModel
             await LoadAddonsAsync();
 
             SetInstallStatus("Checking every World of Warcraft file (this takes a few minutes)...", 0);
-            // Held here: logging out meanwhile clears the field.
-            var torrent = _clientTorrent ??= await _accountService.GetClientTorrentAsync(session, pause.Token);
+            // Held here: logging out meanwhile clears the field. Asked again: a launcher left open may hold an old one.
+            var torrent = _clientTorrent = await _accountService.GetClientTorrentAsync(session, pause.Token);
             await StopAllSharingAsync();
             pause.Token.ThrowIfCancellationRequested();
             await _torrents.ForgetResumeAsync(torrent);
