@@ -137,12 +137,17 @@ public static class ClientConformanceService
     /// for, and catches what the cached torrent misses: launchers before 0.5.58 saved every torrent whose
     /// sizes matched, without downloading anything. A folder with no record of another torrent hasn't
     /// changed: its sizes match, so the current torrent becomes its baseline without a hash check of the
-    /// whole client. Only ask this with a torrent the portal just gave: the cached copy always matches itself.
+    /// whole client. The exception is <paramref name="downloadUnfinished"/>, a download into this folder
+    /// that was started and hasn't finished: without a cached torrent the marker alone would call it
+    /// done, since it already names the torrent being downloaded. Only ask this with a torrent the portal
+    /// just gave: an old one says nothing about what the realm wants now.
     /// </summary>
-    public static bool ClientTorrentChanged(string root, byte[] torrent)
+    public static bool ClientTorrentChanged(string root, byte[] torrent, bool downloadUnfinished = false)
     {
         var current = TorrentService.InfoHashOf(torrent);
-        if (LoadCachedTorrent(root) is { } cached && TorrentService.InfoHashOf(cached) != current) return true;
+        var cached = LoadCachedTorrent(root);
+        if (cached is not null && TorrentService.InfoHashOf(cached) != current) return true;
+        if (cached is null && downloadUnfinished) return true;
         return InstallMarkerInfoHash(root) is { } started && !string.Equals(started, current, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -184,15 +189,17 @@ public static class ClientConformanceService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 
-    public static void SaveCachedTorrent(string root, byte[] torrent)
+    /// <summary>False when the record couldn't be written.</summary>
+    public static bool SaveCachedTorrent(string root, byte[] torrent)
     {
         var path = Path.Combine(root, CachedTorrentRelativePath);
         try
         {
-            if (File.Exists(path) && File.ReadAllBytes(path).AsSpan().SequenceEqual(torrent)) return;
+            if (File.Exists(path) && File.ReadAllBytes(path).AsSpan().SequenceEqual(torrent)) return true;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllBytes(path, torrent);
+            return true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
     }
 }

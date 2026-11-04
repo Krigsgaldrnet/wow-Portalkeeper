@@ -96,9 +96,17 @@ public sealed class LauncherAccountService
         }
     }
 
-    /// <summary>The realm's client torrent, rewritten for this player.</summary>
-    public Task<byte[]> GetClientTorrentAsync(LauncherSession session, CancellationToken cancellationToken = default) =>
-        GetBytesAsync("torrent.php?name=client", session, cancellationToken);
+    /// <summary>
+    /// The realm's client torrent, rewritten for this player. An answer that isn't a torrent (a proxy's or
+    /// PHP's error page with a 200) throws here, so it's handled like no answer and never kept.
+    /// </summary>
+    public async Task<byte[]> GetClientTorrentAsync(LauncherSession session, CancellationToken cancellationToken = default)
+    {
+        var torrent = await GetBytesAsync("torrent.php?name=client", session, cancellationToken);
+        if (TorrentService.TryInfoHashOf(torrent) is null)
+            throw new InvalidDataException("The portal's client torrent can't be read.");
+        return torrent;
+    }
 
     /// <summary>The torrent for one patch in the realm folder.</summary>
     public Task<byte[]> GetPatchTorrentAsync(LauncherSession session, string fileName, CancellationToken cancellationToken = default) =>

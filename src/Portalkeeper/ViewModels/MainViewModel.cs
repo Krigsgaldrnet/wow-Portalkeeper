@@ -628,7 +628,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             }
             await StopOptionalAddonUpdatesAsync();
             ApplyClientInfo(_clientService.ValidateClient(ClientPath, _realmInfo.Client));
-            if (!await EnforceRealmClientAsync())
+            if (!await EnforceRealmClientAsync(forLaunch: true))
                 throw new InvalidOperationException(_clientCheckStatus.Length > 0 ? _clientCheckStatus : "World of Warcraft doesn't match the realm's client.");
             if (!await PrepareLongPatchNamesAsync())
                 throw new InvalidOperationException(_syncStatus.Length > 0 ? _syncStatus : "World of Warcraft isn't set up for the realm's patches yet.");

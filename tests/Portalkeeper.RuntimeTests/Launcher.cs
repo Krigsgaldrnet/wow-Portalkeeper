@@ -671,7 +671,7 @@ internal static partial class Program
                 Interlocked.Read(ref served) - servedBefore is > 0 and <= 2 * 16 * 1024);
             Marker(rebuiltTorrent);
             ClientConformanceService.SaveCachedTorrent(client, rebuiltTorrent);
-            check("once finished the client is current and stays that way",
+            check("with the marker and record a finished download leaves, the client is current",
                 !ClientConformanceService.ClientTorrentChanged(client, rebuiltTorrent));
             check("sharing works again after the update", await torrents.ShareAsync(rebuiltTorrent, client));
 
@@ -817,7 +817,7 @@ internal static partial class Program
         State(oldTorrent, null);
         check("a client the launcher didn't install: the record still shows the new torrent", Changed());
         State(oldTorrent, MarkerFor(newHash));
-        check("an update that started and didn't finish starts again", Changed());
+        check("marker new, record old (an update that didn't finish): update", Changed());
         State(newTorrent, MarkerFor(oldHash));
         check("an old launcher saved the new torrent without downloading it: update", Changed());
         State(otherPlayer, MarkerFor(oldHash));
@@ -831,6 +831,12 @@ internal static partial class Program
         check("no cached torrent, the marker names this one: the baseline", !Changed());
         State(null, MarkerFor(oldHash));
         check("no cached torrent, the marker names another: update", Changed());
+        State(null, MarkerFor(newHash));
+        check("no cached torrent, the marker names this one, its download never finished: update",
+            ClientConformanceService.ClientTorrentChanged(client, newTorrent, downloadUnfinished: true));
+        State(newTorrent, MarkerFor(newHash));
+        check("a REPAIR GAME paused over the current torrent doesn't hold the client back",
+            !ClientConformanceService.ClientTorrentChanged(client, newTorrent, downloadUnfinished: true));
         State(null, "{\"started\":\"2026-11-04T00:00:00+00:00\"}");
         check("a marker without a hash says nothing", !Changed());
         foreach (var damaged in new[] { "not json", "[1,2]", "{\"infoHash\":5}", "" })
@@ -839,7 +845,7 @@ internal static partial class Program
             check($"an unreadable marker says nothing ({damaged.Length} bytes)", !Changed());
         }
 
-        // A damaged record never stops a launch, online or offline.
+        // A damaged record reads as no record.
         foreach (var damaged in new[] { Array.Empty<byte>(), "<html>error</html>"u8.ToArray(), "d4:name3:abce"u8.ToArray(), oldTorrent[..100] })
         {
             State(damaged, null);
@@ -848,10 +854,27 @@ internal static partial class Program
             check($"bytes that aren't a torrent ({damaged.Length} bytes) have no info hash", TorrentService.TryInfoHashOf(damaged) is null);
         }
 
-        // Offline the launcher only has the cached torrent, which always matches itself: nothing to update to.
-        State(oldTorrent, MarkerFor(oldHash));
-        check("the cached torrent read back offline isn't a change",
-            ClientConformanceService.LoadCachedTorrent(client) is { } offline && !ClientConformanceService.ClientTorrentChanged(client, offline));
+        // A record that can't be written is reported, so the launcher can say the update did finish.
+        State(oldTorrent, null);
+        var blocked = Path.Combine(root, "change", "blocked");
+        Directory.CreateDirectory(blocked);
+        File.WriteAllText(Path.Combine(blocked, ".portalkeeper"), "a file where the folder should be");
+        check("a record that can't be written says so", !ClientConformanceService.SaveCachedTorrent(blocked, newTorrent));
+        check("a record that can be written says so", ClientConformanceService.SaveCachedTorrent(client, newTorrent)
+            && ClientConformanceService.LoadCachedTorrent(client) is { } saved && saved.SequenceEqual(newTorrent));
+
+        // An answer with a 200 that isn't a torrent is no answer: it must never reach the launcher's torrent.
+        byte[] portalAnswer = "<html>Warning: something went wrong</html>"u8.ToArray();
+        var portal = new LauncherAccountService(new Uri("https://portal.example/api/launcher/"),
+            new HttpClient(new FakeHandler(_ => new ByteArrayContent(portalAnswer))));
+        var player = new LauncherSession("token", "ALICE", DateTimeOffset.UtcNow.AddDays(30));
+        var refused = false;
+        try { portal.GetClientTorrentAsync(player).GetAwaiter().GetResult(); }
+        catch (InvalidDataException) { refused = true; }
+        check("the portal's error page isn't taken for a torrent", refused);
+        portalAnswer = newTorrent;
+        check("the portal's torrent is handed on as it came",
+            portal.GetClientTorrentAsync(player).GetAwaiter().GetResult().SequenceEqual(newTorrent));
 
         var allThere = new ClientConformance([], [], [], 2);
         var missing = new ClientConformance(["Wow.exe"], [], [], 2);
@@ -859,7 +882,7 @@ internal static partial class Program
             ClientConformanceService.Decide(allThere, true, false) == ClientAction.Ok && ClientConformanceService.Decide(allThere, false, false) == ClientAction.Ok);
         check("the launcher's own install updates itself, for a new torrent or for files",
             ClientConformanceService.Decide(allThere, true, true) == ClientAction.Update && ClientConformanceService.Decide(missing, true, false) == ClientAction.Update);
-        check("nothing is written to another client: it goes through INSTALL WOW",
+        check("another client that's behind is sent to INSTALL WOW",
             ClientConformanceService.Decide(allThere, false, true) == ClientAction.NotRealmClient && ClientConformanceService.Decide(missing, false, false) == ClientAction.NotRealmClient);
     }
 
