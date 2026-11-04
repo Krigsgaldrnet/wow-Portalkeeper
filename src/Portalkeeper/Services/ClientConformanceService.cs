@@ -134,7 +134,7 @@ public static class ClientConformanceService
     /// The realm's client torrent is a different one from the one this folder was last brought up to.
     /// Sizes can't show this: a rebuilt file can keep its size. The cached torrent is that record, saved
     /// only once a download has finished. The install marker names the torrent the last download started
-    /// for, and catches what the cached torrent misses: launchers before 0.5.58 saved every torrent whose
+    /// for, and catches what the cached torrent misses: launchers before 0.5.62 saved every torrent whose
     /// sizes matched, without downloading anything. A folder with no record of another torrent hasn't
     /// changed: its sizes match, so the current torrent becomes its baseline without a hash check of the
     /// whole client. The exception is <paramref name="downloadUnfinished"/>, a download into this folder
